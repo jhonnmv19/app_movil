@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/constants/supabase_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'core/routes/app_routes.dart';
 
-void main() {
+void main() async {
+  // Asegura la inicialización de los bindings de Flutter antes de llamar a código asíncrono
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializa Supabase con las credenciales de tus constantes
+  await Supabase.initialize(
+    url: SupabaseConstants.url,
+    anonKey: SupabaseConstants.anonKey,
+  );
+
   runApp(const RutaDelSaborApp());
 }
+
+// Instancia global del cliente de Supabase para realizar consultas desde cualquier vista o controlador
+final supabase = Supabase.instance.client;
 
 class RutaDelSaborApp extends StatelessWidget {
   const RutaDelSaborApp({super.key});
@@ -15,7 +29,7 @@ class RutaDelSaborApp extends StatelessWidget {
       title: 'La Ruta del Sabor',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      initialRoute: AppRoutes.home,
+      initialRoute: AppRoutes.welcome,
       routes: AppRoutes.routes,
     );
   }
