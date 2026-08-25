@@ -1,192 +1,283 @@
 import 'package:flutter/material.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/home_data_model.dart';
+import '../../../data/services/establecimiento_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  // Cambio de HomeService a EstablecimientoService
+  final EstablecimientoService _establecimientoService = EstablecimientoService();
+
+  late Future<List<CategoriaItem>> _categoriasFuture;
+  late Future<List<PlatoDiaItem>> _platosFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatos();
+  }
+
+  void _cargarDatos() {
+    _categoriasFuture = _establecimientoService.fetchCategorias();
+    _platosFuture = _establecimientoService.fetchPlatosDelDia();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. Encabezado de bienvenida y Foto del usuario (Row + Column)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '¡Bienvenido!',
-                        style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '¿Qué quieres comer\nhoy?',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              fontSize: 22,
-                              height: 1.2,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                    ],
-                  ),
-                  const CircleAvatar(
-                    radius: 24,
-                    backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=32'),
-                  ),
-                ],
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _cargarDatos();
+            });
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. Encabezado de bienvenida
+              
+Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  crossAxisAlignment: CrossAxisAlignment.center,
+  children: [
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '¡Bienvenido!',
+          style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '¿Qué quieres comer\nhoy?',
+          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontSize: 22,
+                height: 1.2,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(height: 20),
+        ),
+      ],
+    ),
+    // Botón directo para iniciar sesión o ir al login
+    Column(
+      children: [
+        InkWell(
+          onTap: () {
+            // Navega a la pantalla de login definida en tus rutas
+            Navigator.pushNamed(context, AppRoutes.login);
+          },
+          borderRadius: BorderRadius.circular(30),
+          child: CircleAvatar(
+            radius: 24,
+            backgroundColor: AppTheme.accentLightOrange,
+            child: const Icon(
+              Icons.person_outline_rounded,
+              color: AppTheme.primaryOrange,
+              size: 26,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: () {
+            Navigator.pushNamed(context, AppRoutes.login);
+          },
+          child: const Text(
+            'Ingresar',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.primaryOrange,
+            ),
+          ),
+        ),
+      ],
+    ),
+  ],
+),
+                const SizedBox(height: 20),
 
-              // 2. Barra de Búsqueda (Row + Container + TextField)
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.search, color: AppTheme.textMuted),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              decoration: InputDecoration(
-                                hintText: 'Buscar plato, feria o restaurante...',
-                                hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 14),
-                                border: InputBorder.none,
+                // 2. Búsqueda
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.search, color: AppTheme.textMuted),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Buscar plato, feria o restaurante...',
+                                  hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 14),
+                                  border: InputBorder.none,
+                                ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    height: 50,
-                    width: 50,
-                    decoration: BoxDecoration(
-                      color: AppTheme.accentLightOrange,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.tune,
-                      color: AppTheme.primaryOrange,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // 3. Banner Promocional / Módulo Destacado (Card + Row + Column)
-              Card(
-                elevation: 0,
-                color: const Color(0xFFFFF2EE),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: AppTheme.primaryOrange.withOpacity(0.2)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.local_offer, size: 36, color: AppTheme.primaryOrange),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              'Plato del Día',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textDark),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Explora las ofertas gastronómicas de hoy.',
-                              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward_ios, size: 18, color: AppTheme.primaryOrange),
-                        onPressed: () {
-                          Navigator.pushNamed(context, AppRoutes.platoDelDia);
-                        },
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      height: 50,
+                      width: 50,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentLightOrange,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // 4. Sección Categorías (Row + ListView Horizontal)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Categorías', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text('VER TODAS', style: TextStyle(color: AppTheme.primaryOrange, fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              SizedBox(
-                height: 90,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: const [
-                    _CategoryCard(label: 'Chicharrón', icon: Icons.lunch_dining),
-                    _CategoryCard(label: 'Silpancho', icon: Icons.flatware),
-                    _CategoryCard(label: 'Saice', icon: Icons.soup_kitchen),
-                    _CategoryCard(label: 'Pique Macho', icon: Icons.local_fire_department),
-                    _CategoryCard(label: 'Sopas', icon: Icons.ramen_dining),
+                      child: const Icon(Icons.tune, color: AppTheme.primaryOrange),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-              // 5. Sección Platos Destacados (Row + Card personalizada)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Platos destacados', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text('POPULARES', style: TextStyle(color: AppTheme.primaryOrange, fontSize: 12, fontWeight: FontWeight.bold)),
+                // 3. Banner Promocional
+                Card(
+                  elevation: 0,
+                  color: const Color(0xFFFFF2EE),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: AppTheme.primaryOrange.withOpacity(0.2)),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Tarjeta de Plato destacada usando Card
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushNamed(context, AppRoutes.platoDelDia);
-                },
-                child: const _DishCard(
-                  title: 'Pique Macho Especial',
-                  price: 'Bs. 45',
-                  location: 'Doña Elvira - El Prado, Cbba.',
-                  rating: '4.9',
-                  imageUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=500',
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_offer, size: 36, color: AppTheme.primaryOrange),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Plato del Día', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textDark)),
+                              SizedBox(height: 2),
+                              Text('Explora las ofertas gastronómicas de hoy.', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.arrow_forward_ios, size: 18, color: AppTheme.primaryOrange),
+                          onPressed: () => Navigator.pushNamed(context, AppRoutes.platoDelDia),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+
+                // 4. Categorías Dinámicas
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Categorías', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    TextButton(
+                      onPressed: () => Navigator.pushNamed(context, AppRoutes.explorer),
+                      child: const Text('VER TODAS', style: TextStyle(color: AppTheme.primaryOrange, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                SizedBox(
+                  height: 90,
+                  child: FutureBuilder<List<CategoriaItem>>(
+                    future: _categoriasFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text('Sin categorías', style: TextStyle(fontSize: 12)));
+                      }
+
+                      final categorias = snapshot.data!;
+                      return ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: categorias.length,
+                        itemBuilder: (context, index) {
+                          final cat = categorias[index];
+                          return _CategoryCard(label: cat.nombre, icon: Icons.restaurant_menu);
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 5. Platos Destacados / Ofertas del Día Dinámicos
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Platos del día', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    TextButton(
+                      onPressed: () => Navigator.pushNamed(context, AppRoutes.platoDelDia),
+                      child: const Text('POPULARES', style: TextStyle(color: AppTheme.primaryOrange, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                FutureBuilder<List<PlatoDiaItem>>(
+                  future: _platosFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator()));
+                    }
+                    if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Container(
+                        padding: const EdgeInsets.all(20),
+                        width: double.infinity,
+                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(16)),
+                        child: const Center(child: Text('No hay platos del día disponibles hoy.', style: TextStyle(color: AppTheme.textMuted))),
+                      );
+                    }
+
+                    final platos = snapshot.data!;
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: platos.length,
+                      itemBuilder: (context, index) {
+                        final plato = platos[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: GestureDetector(
+                            onTap: () => Navigator.pushNamed(context, AppRoutes.platoDelDia),
+                            child: _DishCard(
+                              title: plato.titulo,
+                              price: 'Bs. ${plato.precio.toStringAsFixed(2)}',
+                              location: '${plato.nombreEstablecimiento} - ${plato.direccion}',
+                              rating: '4.8',
+                              imageUrl: plato.imagenUrl ?? 'https://images.unsplash.com/photo-1544025162-d76694265947?w=500',
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -194,7 +285,6 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// Sub-widget: Tarjeta de Categoría
 class _CategoryCard extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -204,8 +294,9 @@ class _CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 85,
+      width: 95,
       margin: const EdgeInsets.only(right: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -218,6 +309,9 @@ class _CategoryCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textDark),
           ),
         ],
@@ -226,7 +320,6 @@ class _CategoryCard extends StatelessWidget {
   }
 }
 
-// Sub-widget: Tarjeta de Plato Destacado (Basado en el widget Card de Flutter)
 class _DishCard extends StatelessWidget {
   final String title;
   final String price;
@@ -275,10 +368,7 @@ class _DishCard extends StatelessWidget {
                     color: AppTheme.primaryOrange,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
-                    'Plato del día',
-                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
+                  child: const Text('Plato del día', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                 ),
               ),
               Positioned(
@@ -309,14 +399,17 @@ class _DishCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     Text(
                       price,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppTheme.primaryOrange,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.primaryOrange),
                     ),
                   ],
                 ),
@@ -325,7 +418,14 @@ class _DishCard extends StatelessWidget {
                   children: [
                     const Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textMuted),
                     const SizedBox(width: 4),
-                    Text(location, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                    Expanded(
+                      child: Text(
+                        location,
+                        style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),

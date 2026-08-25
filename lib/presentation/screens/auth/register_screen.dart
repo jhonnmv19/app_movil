@@ -12,18 +12,16 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controladores de usuario
   final _nombreController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _telefonoController = TextEditingController();
 
-  // Controladores de negocio (si se registra como dueño)
   final _nombreNegocioController = TextEditingController();
   final _direccionNegocioController = TextEditingController();
   final _descripcionNegocioController = TextEditingController();
 
-  String _rolSeleccionado = 'comensal'; // Por defecto: comensal/visitante
+  String _rolSeleccionado = 'comensal';
   String? _documentoPath;
   bool _isLoading = false;
 
@@ -52,12 +50,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _registrarse() async {
+    // 1. Disparar validación de todos los TextFormFields
     if (!_formKey.currentState!.validate()) return;
 
+    // 2. Validación manual adicional para el adjunto si es dueño
     if (_rolSeleccionado == 'dueño' && _documentoPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Adjunta tu documento de identidad (CI / NIT) para solicitar el alta de negocio.'),
+          content: Text('Adjunta tu documento de identidad (CI / NIT) para la solicitud.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -69,13 +69,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final supabase = Supabase.instance.client;
 
-      // 1. Registro en la tabla usuarios_r_sabor
       final userResponse = await supabase
           .from('usuarios_r_sabor')
           .insert({
             'nombre_completo': _nombreController.text.trim(),
-            'email': _emailController.text.trim(),
-            'password_hash': _passwordController.text, // Recomienda usar Auth nativo de Supabase
+            'email': _emailController.text.trim().toLowerCase(),
+            'password_hash': _passwordController.text,
             'telefono': _telefonoController.text.trim(),
             'rol': _rolSeleccionado,
             'estado': 'activo',
@@ -83,12 +82,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           .select('id')
           .single();
 
-      final BigInt usuarioId = BigInt.parse(userResponse['id'].toString());
+      final int usuarioId = int.parse(userResponse['id'].toString());
 
-      // 2. Si se registra como Dueño, creamos la solicitud en solicitudes_registro_r_sabor
       if (_rolSeleccionado == 'dueño') {
         await supabase.from('solicitudes_registro_r_sabor').insert({
-          'usuario_id': usuarioId.toInt(),
+          'usuario_id': usuarioId,
           'nombre_negocio_propuesto': _nombreNegocioController.text.trim(),
           'descripcion_negocio': _descripcionNegocioController.text.trim(),
           'direccion_propuesta': _direccionNegocioController.text.trim(),
@@ -104,7 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         SnackBar(
           content: Text(
             _rolSeleccionado == 'dueño'
-                ? 'Registro completado. Tu solicitud de negocio está pendiente de revisión.'
+                ? 'Registro completado. Tu solicitud está en revisión.'
                 : '¡Bienvenido a La Ruta del Sabor!',
           ),
           backgroundColor: const Color(0xFFD64E28),
@@ -116,7 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al registrarse: ${e.toString()}'),
+          content: Text('Error en el registro: ${e.toString()}'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -136,13 +134,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
           child: Form(
             key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Ícono
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(
@@ -166,7 +164,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Selector de Rol (Comensal / Dueño)
+                // Selector de Rol
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   decoration: BoxDecoration(
@@ -177,19 +175,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Row(
                     children: [
                       const Icon(Icons.badge_outlined, color: Color(0xFFD64E28)),
-                      const SizedBox(width: 12),
-                      const Text('Quiero registrarme como:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
+                      const Text('Tipo de usuario:', style: TextStyle(fontWeight: FontWeight.bold)),
                       const Spacer(),
-                      DropdownButton<String>(
-                        value: _rolSeleccionado,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'comensal', child: Text('Visitante / Comensal')),
-                          DropdownMenuItem(value: 'dueño', child: Text('Dueño de Negocio')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) setState(() => _rolSeleccionado = val);
-                        },
+                      DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _rolSeleccionado,
+                          items: const [
+                            DropdownMenuItem(value: 'comensal', child: Text('Visitante / Comensal')),
+                            DropdownMenuItem(value: 'dueño', child: Text('Dueño de Negocio')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _rolSeleccionado = val);
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -204,7 +203,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: const Icon(Icons.person_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  validator: (val) => val == null || val.trim().isEmpty ? 'Ingresa tu nombre' : null,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) return 'Ingresa tu nombre completo';
+                    if (val.trim().length < 3) return 'El nombre debe tener al menos 3 letras';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -216,7 +219,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: const Icon(Icons.email_outlined),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  validator: (val) => val == null || val.trim().isEmpty ? 'Ingresa tu correo' : null,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) return 'Ingresa tu correo';
+                    final emailRegExp = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                    if (!emailRegExp.hasMatch(val.trim())) return 'Ingresa un correo electrónico válido';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -224,11 +232,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _telefonoController,
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
-                    labelText: 'Teléfono',
+                    labelText: 'Teléfono / WhatsApp',
                     prefixIcon: const Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  validator: (val) => val == null || val.trim().isEmpty ? 'Ingresa tu teléfono' : null,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) return 'Ingresa tu teléfono';
+                    if (!RegExp(r'^[0-9]{7,12}$').hasMatch(val.trim())) {
+                      return 'Ingresa un teléfono válido (7-12 dígitos)';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
 
@@ -240,92 +254,115 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  validator: (val) => val == null || val.length < 6 ? 'Mínimo 6 caracteres' : null,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) return 'Ingresa tu contraseña';
+                    if (val.length < 6) return 'La contraseña debe tener al menos 6 caracteres';
+                    return null;
+                  },
                 ),
 
-                // Si selecciona 'dueño', desplegar formulario adicional de negocio
-                if (_rolSeleccionado == 'dueño') ...[
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Datos de Postulación de Negocio',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: const Color(0xFFD64E28),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: _nombreNegocioController,
-                    decoration: InputDecoration(
-                      labelText: 'Nombre del negocio o puesto',
-                      prefixIcon: const Icon(Icons.storefront_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    validator: (val) => val == null || val.trim().isEmpty ? 'Ingresa el nombre del negocio' : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: _direccionNegocioController,
-                    decoration: InputDecoration(
-                      labelText: 'Dirección o ubicación',
-                      prefixIcon: const Icon(Icons.location_on_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    validator: (val) => val == null || val.trim().isEmpty ? 'Ingresa la dirección' : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: _descripcionNegocioController,
-                    maxLines: 2,
-                    decoration: InputDecoration(
-                      labelText: 'Descripción del negocio',
-                      prefixIcon: const Icon(Icons.description_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  InkWell(
-                    onTap: _seleccionarDocumento,
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF2EE),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.5)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.badge_outlined, color: Color(0xFFD64E28)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _documentoPath ?? 'Adjuntar Documento (CI / NIT)',
-                              style: TextStyle(
-                                color: _documentoPath != null ? Colors.black87 : Colors.black54,
-                                fontWeight: _documentoPath != null ? FontWeight.bold : FontWeight.normal,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Icon(
-                            _documentoPath != null ? Icons.check_circle : Icons.upload_file_rounded,
+                // Despliegue Suave para Campos de Dueño de Negocio
+                AnimatedCrossFade(
+                  firstChild: const SizedBox(width: double.infinity),
+                  secondChild: Column(
+                    children: [
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Datos del Negocio',
+                          style: theme.textTheme.titleMedium?.copyWith(
                             color: const Color(0xFFD64E28),
+                            fontWeight: FontWeight.bold,
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _nombreNegocioController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre del negocio o puesto',
+                          prefixIcon: const Icon(Icons.storefront_outlined),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        validator: (val) {
+                          if (_rolSeleccionado == 'dueño') {
+                            if (val == null || val.trim().isEmpty) return 'Ingresa el nombre de tu negocio';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _direccionNegocioController,
+                        decoration: InputDecoration(
+                          labelText: 'Dirección o ubicación',
+                          prefixIcon: const Icon(Icons.location_on_outlined),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        validator: (val) {
+                          if (_rolSeleccionado == 'dueño') {
+                            if (val == null || val.trim().isEmpty) return 'Ingresa la dirección';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _descripcionNegocioController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Descripción del negocio',
+                          prefixIcon: const Icon(Icons.description_outlined),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      InkWell(
+                        onTap: _seleccionarDocumento,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF2EE),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.5)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.badge_outlined, color: Color(0xFFD64E28)),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _documentoPath ?? 'Adjuntar Documento (CI / NIT)',
+                                  style: TextStyle(
+                                    color: _documentoPath != null ? Colors.black87 : Colors.black54,
+                                    fontWeight: _documentoPath != null ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Icon(
+                                _documentoPath != null ? Icons.check_circle : Icons.upload_file_rounded,
+                                color: const Color(0xFFD64E28),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                  crossFadeState: _rolSeleccionado == 'dueño'
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  duration: const Duration(milliseconds: 300),
+                ),
 
                 const SizedBox(height: 28),
 

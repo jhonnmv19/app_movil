@@ -1,119 +1,64 @@
 import 'package:flutter/material.dart';
 
-class RequestsScreen extends StatefulWidget {
-  const RequestsScreen({super.key});
+class PublishDailyDishScreen extends StatefulWidget {
+  final int establecimientoId;
+
+  const PublishDailyDishScreen({super.key, required this.establecimientoId});
 
   @override
-  State<RequestsScreen> createState() => _RequestsScreenState();
+  State<PublishDailyDishScreen> createState() => _PublishDailyDishScreenState();
 }
 
-class _RequestsScreenState extends State<RequestsScreen> {
+class _PublishDailyDishScreenState extends State<PublishDailyDishScreen> {
   final _formKey = GlobalKey<FormState>();
-
-  // Controladores de texto para los campos de la tabla solicitudes_registro
-  final _nombreNegocioController = TextEditingController();
+  final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
-  final _direccionController = TextEditingController();
-  final _telefonoController = TextEditingController();
+  final _precioOfertaController = TextEditingController();
 
-  String? _documentoPath;
+  bool _disponibleAhora = true;
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _nombreNegocioController.dispose();
+    _tituloController.dispose();
     _descripcionController.dispose();
-    _direccionController.dispose();
-    _telefonoController.dispose();
+    _precioOfertaController.dispose();
     super.dispose();
   }
 
-  void _seleccionarDocumento() {
-    setState(() {
-      _documentoPath = 'documento_identidad_adjunto.pdf';
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Documento adjuntado correctamente'),
-        backgroundColor: Color(0xFFD64E28),
-      ),
-    );
-  }
-
-  void _enviarSolicitud() async {
+  void _publicarPlatoDelDia() async {
     if (_formKey.currentState!.validate()) {
-      if (_documentoPath == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Por favor adjunta la foto de tu CI o NIT'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-
       setState(() => _isLoading = true);
 
-      // Simulación de envío a la base de datos
+      // Mapeo según la tabla: plato_del_dia_r_sabor
+      final datosPlatoDia = {
+        'establecimiento_id': widget.establecimientoId,
+        'titulo_oferta': _tituloController.text.trim(),
+        'descripcion_oferta': _descripcionController.text.trim(),
+        'precio_oferta_bs': double.tryParse(_precioOfertaController.text.trim()) ?? 0.0,
+        'disponible_ahora': _disponibleAhora,
+      };
+
       await Future.delayed(const Duration(seconds: 2));
 
       if (!mounted) return;
-
       setState(() => _isLoading = false);
 
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle_outline, color: Color(0xFFD64E28)),
-              SizedBox(width: 8),
-              Text('Solicitud Enviada'),
-            ],
-          ),
-          content: const Text(
-            'Tu postulación de negocio ha sido enviada con éxito y está pendiente de revisión.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _limpiarFormulario();
-              },
-              child: const Text(
-                'Aceptar',
-                style: TextStyle(
-                  color: Color(0xFFD64E28),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('¡Plato del día publicado exitosamente!'),
+          backgroundColor: Color(0xFFD64E28),
         ),
       );
+      Navigator.of(context).pop();
     }
-  }
-
-  void _limpiarFormulario() {
-    _nombreNegocioController.clear();
-    _descripcionController.clear();
-    _direccionController.clear();
-    _telefonoController.clear();
-    setState(() {
-      _documentoPath = null;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Registro de Negocios'),
+        title: const Text('Publicar Plato del Día'),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFFD64E28),
         elevation: 0.5,
@@ -124,194 +69,75 @@ class _RequestsScreenState extends State<RequestsScreen> {
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Ícono institucional
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFF2EE),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.storefront_rounded,
-                    size: 48,
-                    color: Color(0xFFD64E28),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Encabezados
                 Text(
-                  'Postula tu Negocio',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFFD64E28),
-                    letterSpacing: -0.5,
-                  ),
+                  'Oferta de Hoy',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFD64E28),
+                      ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'Registra tu restaurante, casera o puesto tradicional',
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 28),
-
-                // Campos del Formulario
+                const Text('Completa los detalles del plato especial que ofrecerás hoy a tus comensales.'),
+                const SizedBox(height: 24),
                 TextFormField(
-                  controller: _nombreNegocioController,
+                  controller: _tituloController,
                   decoration: InputDecoration(
-                    labelText: 'Nombre del negocio o puesto',
-                    prefixIcon: const Icon(Icons.business_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+                    labelText: 'Título del plato u oferta',
+                    hintText: 'Ej. Silpancho Cochabambino, Sopa de Maní',
+                    prefixIcon: const Icon(Icons.restaurant_menu),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa el nombre del negocio';
-                    }
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Ingresa el nombre del plato' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _precioOfertaController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Precio de oferta (Bs)',
+                    prefixIcon: const Icon(Icons.attach_money),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Ingresa el precio';
+                    if (double.tryParse(v.trim()) == null) return 'Ingresa un monto válido';
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _telefonoController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Teléfono de contacto',
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa un número de contacto';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                TextFormField(
-                  controller: _direccionController,
-                  decoration: InputDecoration(
-                    labelText: 'Dirección o ubicación del puesto',
-                    prefixIcon: const Icon(Icons.location_on_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa la dirección exacta';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
                 TextFormField(
                   controller: _descripcionController,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    labelText: 'Descripción del negocio',
-                    alignLabelWithHint: true,
-                    prefixIcon: const Icon(Icons.description_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Proporciona una breve descripción';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                // Botón para adjuntar documento
-                InkWell(
-                  onTap: _seleccionarDocumento,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF2EE),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFD64E28).withOpacity(0.5),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.badge_outlined,
-                          color: Color(0xFFD64E28),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _documentoPath ??
-                                'Adjuntar Documento de Identidad (CI / NIT)',
-                            style: TextStyle(
-                              color: _documentoPath != null
-                                  ? Colors.black87
-                                  : Colors.black54,
-                              fontWeight: _documentoPath != null
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              fontSize: 13,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Icon(
-                          _documentoPath != null
-                              ? Icons.check_circle
-                              : Icons.upload_file_rounded,
-                          color: const Color(0xFFD64E28),
-                        ),
-                      ],
-                    ),
+                    labelText: 'Descripción / Guarniciones',
+                    hintText: 'Ej. Incluye arroz, papa frita, ensalada y refresco gratis',
+                    prefixIcon: const Icon(Icons.notes),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
-                const SizedBox(height: 28),
-
-                // Botón principal de envío
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text('Disponible para servir ahora'),
+                  activeColor: const Color(0xFFD64E28),
+                  value: _disponibleAhora,
+                  onChanged: (val) => setState(() => _disponibleAhora = val),
+                ),
+                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _enviarSolicitud,
+                    onPressed: _isLoading ? null : _publicarPlatoDelDia,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFD64E28),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     child: _isLoading
-                        ? const SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : const Text(
-                            'Enviar Solicitud',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Publicar Plato del Día', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
