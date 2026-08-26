@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
-import '../comensal/home_screen.dart';
-import '../comensal/map_screen.dart';
+import 'duenno_home_screen.dart';
+import 'map_screen.dart';
 import 'requests_screen.dart';
-import '../comensal/profile_screen.dart';
+import 'duenno_profile_screen.dart';
 import '../../../core/theme/app_theme.dart';
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class DuennoMainNavigationScreen extends StatefulWidget {
+  const DuennoMainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<DuennoMainNavigationScreen> createState() => _DuennoMainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _DuennoMainNavigationScreenState extends State<DuennoMainNavigationScreen> {
   int _currentIndex = 0;
 
+  // Corregido: 4 pantallas correspondientes a las 4 pestañas del dueño
   final List<Widget> _screens = [
-    const HomeScreen(),
+    const DuennoHomeScreen(),
     const MapScreen(),
-
-    const ProfileScreen(),
+    const RequestsScreen(establecimientoId: 0), // O pasa el ID correspondiente
+    const DuennoProfileScreen(),
   ];
 
   @override

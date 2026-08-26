@@ -109,7 +109,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
 
-      Navigator.pushReplacementNamed(context, AppRoutes.mainNav);
+      Navigator.pushReplacementNamed(context, AppRoutes.comensalMainNav);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

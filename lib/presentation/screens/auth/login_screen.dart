@@ -60,10 +60,13 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
 
+        // Redirección por roles usando los nombres exactos de AppRoutes
         if (rol == 'admin') {
           Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
+        } else if (rol == 'duenno' || rol == 'dueño') {
+          Navigator.pushReplacementNamed(context, AppRoutes.duennoMainNav);
         } else {
-          Navigator.pushReplacementNamed(context, AppRoutes.mainNav);
+          Navigator.pushReplacementNamed(context, AppRoutes.comensalMainNav);
         }
       }
     } catch (e) {
@@ -180,16 +183,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextButton.icon(
-                    onPressed: () => Navigator.pushNamed(context, AppRoutes.adminLogin),
-                    icon: const Icon(Icons.admin_panel_settings_outlined, color: Color(0xFF1E293B)),
-                    label: const Text(
-                      'Acceso a Panel de Administración',
-                      style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.w600),
-                    ),
                   ),
                 ],
               ),

@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
-import '../comensal/home_screen.dart';
-import '../comensal/map_screen.dart';
-import 'requests_screen.dart';
-import '../comensal/profile_screen.dart';
+import 'home_screen.dart';
+import 'map_screen.dart';
+import 'profile_screen.dart';
 import '../../../core/theme/app_theme.dart';
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class ComensalMainNavigationScreen extends StatefulWidget {
+  const ComensalMainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<ComensalMainNavigationScreen> createState() => _ComensalMainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _ComensalMainNavigationScreenState extends State<ComensalMainNavigationScreen> {
   int _currentIndex = 0;
 
+  // 4 pantallas para 4 ítems del menú
   final List<Widget> _screens = [
     const HomeScreen(),
     const MapScreen(),
-
+ // Se añade para cubrir el 3er ítem
     const ProfileScreen(),
   ];
 
@@ -53,9 +53,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Mapa',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            activeIcon: Icon(Icons.assignment),
-            label: 'Solicitudes',
+            icon: Icon(Icons.explore_outlined),
+            activeIcon: Icon(Icons.explore),
+            label: 'Explorar',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

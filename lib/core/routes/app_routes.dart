@@ -1,67 +1,79 @@
-// lib/core/routes/app_routes.dart
 import 'package:flutter/material.dart';
 
+// Autenticación
 import '../../presentation/screens/auth/welcome_screen.dart';
 import '../../presentation/screens/auth/login_screen.dart';
-import '../../presentation/screens/auth/admin_login_screen.dart';
 import '../../presentation/screens/auth/register_screen.dart';
 
-import '../../presentation/screens/user/home_screen.dart';
-import '../../presentation/screens/user/main_navigation_screen.dart';
-import '../../presentation/screens/user/explorer_screen.dart';
-import '../../presentation/screens/user/map_screen.dart';
-import '../../presentation/screens/user/plato_dia_screen.dart';
-import '../../presentation/screens/user/profile_screen.dart';
-import '../../presentation/screens/user/solicitud_registro_screen.dart';
-import '../../presentation/screens/user/publish_daily_dish_screen.dart';
-
+// Administración
 import '../../presentation/screens/admin/admin_dashboard_screen.dart';
-import '../../presentation/screens/admin/requests_screen.dart';
+
+// Dueño de Local
+import '../../presentation/screens/duenno/duenno_main_navigation_screen.dart';
+import '../../presentation/screens/duenno/duenno_home_screen.dart';
+import '../../presentation/screens/duenno/requests_screen.dart';
+import '../../presentation/screens/duenno/duenno_profile_screen.dart';
+
+// Comensal / Cliente
+import '../../presentation/screens/comensal/comensal_main_navigation_screen.dart';
+import '../../presentation/screens/comensal/home_screen.dart';
+import '../../presentation/screens/comensal/map_screen.dart';
+import '../../presentation/screens/comensal/plato_dia_screen.dart';
+import '../../presentation/screens/comensal/profile_screen.dart';
 
 class AppRoutes {
+  // --- Nombres de Rutas ---
   static const String welcome = '/';
   static const String login = '/login';
-  static const String adminLogin = '/admin-login';
   static const String register = '/register';
 
-  static const String mainNav = '/main-nav';
+  static const String adminDashboard = '/admin-dashboard';
+
+  static const String duennoMainNav = '/duenno-main-nav';
+  static const String duennoHome = '/duenno-home';
+  static const String duennoRequests = '/duenno-requests';
+  static const String duennoProfile = '/duenno-profile';
+
+  static const String comensalMainNav = '/comensal-main-nav';
   static const String home = '/home';
   static const String explorer = '/explorer';
   static const String map = '/map';
   static const String platoDelDia = '/plato-del-dia';
   static const String profile = '/profile';
-  static const String solicitarRegistro = '/solicitar-registro';
-  static const String publicarPlato = '/publicar-plato';
 
-  static const String adminDashboard = '/admin-dashboard';
-  static const String requests = '/requests';
-
+  // --- Mapa de Rutas Estáticas ---
   static Map<String, WidgetBuilder> get routes => {
+        // Auth
         welcome: (context) => const WelcomeScreen(),
         login: (context) => const LoginScreen(),
-        adminLogin: (context) => const AdminLoginScreen(),
         register: (context) => const RegisterScreen(),
 
-        mainNav: (context) => const MainNavigationScreen(),
+        // Admin
+        adminDashboard: (context) => const AdminDashboardScreen(),
+
+        // Dueño
+        duennoMainNav: (context) => const DuennoMainNavigationScreen(),
+        duennoHome: (context) => const DuennoHomeScreen(),
+        duennoProfile: (context) => const DuennoProfileScreen(),
+
+        // Comensal
+        comensalMainNav: (context) => const ComensalMainNavigationScreen(),
         home: (context) => const HomeScreen(),
-        explorer: (context) => const ExplorerScreen(),
+        // Redirigido a HomeScreen o ComensalMainNavigationScreen mientras se crea ExplorerScreen
+        explorer: (context) => const HomeScreen(),
         map: (context) => const MapScreen(),
         platoDelDia: (context) => const PlatoDiaScreen(),
         profile: (context) => const ProfileScreen(),
-        solicitarRegistro: (context) => const SolicitudRegistroScreen(),
-
-        adminDashboard: (context) => const AdminDashboardScreen(),
-        requests: (context) => const RequestsScreen(),
       };
 
-  // Manejo de rutas dinámicas con argumentos (ej. ID de establecimiento)
+  // --- Rutas Dinámicas con Argumentos ---
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
-    if (settings.name == publicarPlato) {
+    if (settings.name == duennoRequests) {
       final args = settings.arguments as Map<String, dynamic>?;
       final int establecimientoId = args?['establecimientoId'] ?? 0;
 
       return MaterialPageRoute(
-        builder: (_) => PublishDailyDishScreen(establecimientoId: establecimientoId),
+        builder: (_) => RequestsScreen(establecimientoId: establecimientoId),
       );
     }
     return null;

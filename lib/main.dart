@@ -5,10 +5,8 @@ import 'core/theme/app_theme.dart';
 import 'core/routes/app_routes.dart';
 
 void main() async {
-  // Asegura la inicialización de los bindings de Flutter antes de llamar a código asíncrono
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializa Supabase con las credenciales de tus constantes
   await Supabase.initialize(
     url: SupabaseConstants.url,
     anonKey: SupabaseConstants.anonKey,
@@ -17,7 +15,6 @@ void main() async {
   runApp(const RutaDelSaborApp());
 }
 
-// Instancia global del cliente de Supabase para realizar consultas desde cualquier vista o controlador
 final supabase = Supabase.instance.client;
 
 class RutaDelSaborApp extends StatelessWidget {
@@ -31,6 +28,7 @@ class RutaDelSaborApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       initialRoute: AppRoutes.welcome,
       routes: AppRoutes.routes,
+      onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }
 }
