@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/routes/app_routes.dart';
+import '../../../data/services/session_service.dart';
+import '../../../data/models/usuario_model.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,54 +31,77 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final supabase = Supabase.instance.client;
+      final emailIngresado = _emailController.text.trim().toLowerCase();
+      final passwordIngresada = _passwordController.text;
 
-      final data = await supabase
+      // 1. Consultar directamente el usuario en la tabla personalizada usuarios_r_sabor
+      final response = await supabase
           .from('usuarios_r_sabor')
           .select()
-          .eq('email', _emailController.text.trim().toLowerCase())
-          .eq('password_hash', _passwordController.text)
+          .eq('email', emailIngresado)
           .maybeSingle();
 
       if (!mounted) return;
 
-      if (data == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Credenciales incorrectas o usuario no encontrado'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      } else {
-        final estado = data['estado'] as String?;
-        final rol = data['rol'] as String?;
+      // Si no existe un registro con ese correo
+      if (response == null) {
+        _mostrarSnackBar('El correo electrónico no está registrado', Colors.redAccent);
+        return;
+      }
 
-        if (estado == 'bloqueado' || estado == 'inactivo') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Tu cuenta está actualmente $estado.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          return;
-        }
+      // 2. Verificar la contraseña enviada contra la registrada
+      final String passwordEnBD = response['password_hash']?.toString() ?? '';
+      if (passwordEnBD != passwordIngresada) {
+        _mostrarSnackBar('Contraseña incorrecta. Verifica tus credenciales.', Colors.redAccent);
+        return;
+      }
 
-        // Redirección por roles usando los nombres exactos de AppRoutes
-        if (rol == 'admin') {
+      // 3. Validar el estado de la cuenta
+      final estado = response['estado']?.toString().toLowerCase() ?? 'activo';
+      if (estado == 'bloqueado' || estado == 'inactivo') {
+        _mostrarSnackBar('Tu cuenta está actualmente $estado.', Colors.redAccent);
+        return;
+      }
+
+      // 4. Mapear datos al modelo y guardar en el singleton de SessionService
+      final usuarioMap = Map<String, dynamic>.from(response);
+      final usuarioActual = UsuarioModel.fromJson(usuarioMap);
+      SessionService().iniciarSesion(usuarioActual);
+
+      // 5. Redirección según el rol del usuario
+      final rol = response['rol']?.toString().toLowerCase() ?? 'comensal';
+
+      switch (rol) {
+        case 'admin':
           Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
-        } else if (rol == 'duenno' || rol == 'dueño') {
+          break;
+        case 'dueno':
+        case 'dueño':
+        case 'duenno':
           Navigator.pushReplacementNamed(context, AppRoutes.duennoMainNav);
-        } else {
+          break;
+        case 'comensal':
+        default:
           Navigator.pushReplacementNamed(context, AppRoutes.comensalMainNav);
-        }
+          break;
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al conectar: $e'), backgroundColor: Colors.redAccent),
-      );
+      _mostrarSnackBar('Error inesperado al iniciar sesión: $e', Colors.redAccent);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _mostrarSnackBar(String mensaje, Color colorFondo) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: colorFondo,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   @override
@@ -94,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Logo e Icono
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: const BoxDecoration(
@@ -117,40 +143,58 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 24),
                   Text('Bienvenido de nuevo', style: theme.textTheme.titleLarge),
                   const SizedBox(height: 4),
-                  Text('Ingresa para explorar los menús del día', style: theme.textTheme.bodySmall),
+                  Text(
+                    'Ingresa para explorar los menús del día',
+                    style: theme.textTheme.bodySmall,
+                  ),
                   const SizedBox(height: 32),
 
+                  // Campo Email
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
                       labelText: 'Correo electrónico',
                       prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                     validator: (val) {
-                      if (val == null || val.trim().isEmpty) return 'Ingresa tu correo';
-                      final emailRegExp = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                      if (!emailRegExp.hasMatch(val.trim())) return 'Ingresa un correo válido';
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Ingresa tu correo';
+                      }
+                      final emailRegExp =
+                          RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                      if (!emailRegExp.hasMatch(val.trim())) {
+                        return 'Ingresa un correo válido';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
+
+                  // Campo Contraseña
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
                     decoration: InputDecoration(
                       labelText: 'Contraseña',
                       prefixIcon: const Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                     validator: (val) {
-                      if (val == null || val.isEmpty) return 'Ingresa tu contraseña';
+                      if (val == null || val.isEmpty) {
+                        return 'Ingresa tu contraseña';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 24),
 
+                  // Botón Iniciar Sesión
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -159,21 +203,32 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFD64E28),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                       child: _isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Ingresar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          : const Text(
+                              'Ingresar',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 20),
 
+                  // Enlace a Registro
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('¿No tienes una cuenta? ', style: theme.textTheme.bodySmall),
+                      Text('¿No tienes una cuenta? ',
+                          style: theme.textTheme.bodySmall),
                       GestureDetector(
-                        onTap: () => Navigator.pushNamed(context, AppRoutes.register),
+                        onTap: () =>
+                            Navigator.pushNamed(context, AppRoutes.register),
                         child: Text(
                           'Regístrate',
                           style: theme.textTheme.bodyMedium?.copyWith(

@@ -3,41 +3,57 @@ class UsuarioModel {
   final String nombreCompleto;
   final String email;
   final String? telefono;
-  final String rol; // comensal, dueno, admin
-  final String estado; // activo, inactivo, bloqueado
-  final DateTime fechaRegistro;
+  final String rol;
+  final String estado;
 
-  UsuarioModel({
+  const UsuarioModel({
     required this.id,
     required this.nombreCompleto,
     required this.email,
     this.telefono,
     required this.rol,
     required this.estado,
-    required this.fechaRegistro,
   });
 
   factory UsuarioModel.fromJson(Map<String, dynamic> json) {
     return UsuarioModel(
-      id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
-      nombreCompleto: json['nombre_completo'] ?? '',
-      email: json['email'] ?? '',
-      telefono: json['telefono'],
-      rol: json['rol'] ?? 'comensal',
-      estado: json['estado'] ?? 'activo',
-      fechaRegistro: json['fecha_registro'] != null
-          ? DateTime.parse(json['fecha_registro'])
-          : DateTime.now(),
+      id: json['id'] is int 
+          ? json['id'] 
+          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      nombreCompleto: json['nombre_completo']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      telefono: json['telefono']?.toString(),
+      rol: json['rol']?.toString() ?? 'comensal',
+      estado: json['estado']?.toString() ?? 'activo',
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'nombre_completo': nombreCompleto,
       'email': email,
       'telefono': telefono,
       'rol': rol,
       'estado': estado,
     };
+  }
+
+  UsuarioModel copyWith({
+    int? id,
+    String? nombreCompleto,
+    String? email,
+    String? telefono,
+    String? rol,
+    String? estado,
+  }) {
+    return UsuarioModel(
+      id: id ?? this.id,
+      nombreCompleto: nombreCompleto ?? this.nombreCompleto,
+      email: email ?? this.email,
+      telefono: telefono ?? this.telefono,
+      rol: rol ?? this.rol,
+      estado: estado ?? this.estado,
+    );
   }
 }

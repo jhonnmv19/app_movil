@@ -1,8 +1,27 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/usuario_model.dart';
+import 'session_service.dart';
 
 class UsuariosService {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  // AUTH / LOGIN DIRECTO EN TABLA
+  Future<UsuarioModel?> login(String email, String password) async {
+    try {
+      final response = await _supabase
+          .from('usuarios_r_sabor')
+          .select()
+          .eq('email', email)
+          .single();
+
+      final usuario = UsuarioModel.fromJson(response);
+      SessionService().iniciarSesion(usuario);
+      return usuario;
+    } catch (e) {
+      print('Error en login: $e');
+      return null;
+    }
+  }
 
   // READ
   Future<List<UsuarioModel>> obtenerUsuarios() async {

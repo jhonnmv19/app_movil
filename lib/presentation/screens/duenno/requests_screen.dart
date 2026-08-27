@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class RequestsScreen extends StatefulWidget {
   final int establecimientoId;
 
-  const RequestsScreen({super.key, required this.establecimientoId});
+  const RequestsScreen({
+    super.key,
+    required this.establecimientoId,
+  });
 
   @override
   State<RequestsScreen> createState() => _RequestsScreenState();
@@ -27,141 +31,267 @@ class _RequestsScreenState extends State<RequestsScreen> {
     super.dispose();
   }
 
-  void _publicarPlatoDelDia() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+  Future<void> _publicarPlatoDelDia() async {
+    FocusScope.of(context).unfocus();
 
-      try {
-        // Objeto según el esquema de la tabla: plato_del_dia_r_sabor
-        final datosPlatoDia = {
-          'establecimiento_id': widget.establecimientoId,
-          'titulo_oferta': _tituloController.text.trim(),
-          'descripcion_oferta': _descripcionController.text.trim(),
-          'precio_oferta_bs': double.tryParse(_precioOfertaController.text.trim()) ?? 0.0,
-          'disponible_ahora': _disponibleAhora,
-        };
+    if (!(_formKey.currentState?.validate() ?? false)) return;
 
-        // Inserción en Supabase
-        await Supabase.instance.client
-            .from('plato_del_dia_r_sabor')
-            .insert(datosPlatoDia);
+    final precio = double.tryParse(
+      _precioOfertaController.text.trim().replaceAll(',', '.'),
+    );
 
-        if (!mounted) return;
-
-        // Limpiar formulario tras publicar exitosamente
-        _tituloController.clear();
-        _descripcionController.clear();
-        _precioOfertaController.clear();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('¡Plato del día publicado exitosamente!'),
-            backgroundColor: Color(0xFFD64E28),
-          ),
-        );
-      } catch (error) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al publicar: $error'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
+    if (precio == null || precio <= 0) {
+      _mostrarMensaje(
+        'Ingresa un precio válido mayor a cero.',
+        Colors.red,
+      );
+      return;
     }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await Supabase.instance.client
+          .from('plato_del_dia_r_sabor')
+          .insert({
+        'establecimiento_id': widget.establecimientoId,
+        'titulo_oferta': _tituloController.text.trim(),
+        'descripcion_oferta': _descripcionController.text.trim(),
+        'precio_oferta_bs': precio,
+        'disponible_ahora': _disponibleAhora,
+      });
+
+      if (!mounted) return;
+
+      _tituloController.clear();
+      _descripcionController.clear();
+      _precioOfertaController.clear();
+
+      setState(() => _disponibleAhora = true);
+
+      _mostrarMensaje(
+        '¡Plato del día publicado exitosamente!',
+        const Color(0xFFD64E28),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      _mostrarMensaje(
+        'Error al publicar la oferta.',
+        Colors.red,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _mostrarMensaje(String mensaje, Color color) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
+    const primaryColor = Color(0xFFD64E28);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Publicar Plato del Día'),
         backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFFD64E28),
+        foregroundColor: primaryColor,
         elevation: 0.5,
+        actions: [
+          IconButton(
+            tooltip: 'Limpiar formulario',
+            onPressed: _isLoading
+                ? null
+                : () {
+                    _tituloController.clear();
+                    _descripcionController.clear();
+                    _precioOfertaController.clear();
+                    setState(() => _disponibleAhora = true);
+                  },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Oferta de Hoy',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFD64E28),
-                      ),
-                ),
-                const SizedBox(height: 4),
-                const Text('Completa los detalles del plato especial que ofrecerás hoy a tus comensales.'),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _tituloController,
-                  decoration: InputDecoration(
-                    labelText: 'Título del plato u oferta',
-                    hintText: 'Ej. Silpancho Cochabambino, Sopa de Maní',
-                    prefixIcon: const Icon(Icons.restaurant_menu),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  validator: (v) => v == null || v.trim().isEmpty ? 'Ingresa el nombre del plato' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _precioOfertaController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Precio de oferta (Bs)',
-                    prefixIcon: const Icon(Icons.attach_money),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Ingresa el precio';
-                    if (double.tryParse(v.trim()) == null) return 'Ingresa un monto válido';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _descripcionController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: 'Descripción / Guarniciones',
-                    hintText: 'Ej. Incluye arroz, papa frita, ensalada y refresco gratis',
-                    prefixIcon: const Icon(Icons.notes),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text('Disponible para servir ahora'),
-                  activeColor: const Color(0xFFD64E28),
-                  value: _disponibleAhora,
-                  onChanged: (val) => setState(() => _disponibleAhora = val),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _publicarPlatoDelDia,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD64E28),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Text(
+                'Oferta de Hoy',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: primaryColor,
+                      fontWeight: FontWeight.bold,
                     ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Completa los detalles del plato especial que ofrecerás hoy a tus comensales.',
+                style: TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              TextFormField(
+                controller: _tituloController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: _inputDecoration(
+                  label: 'Título del plato u oferta',
+                  hint: 'Ej. Silpancho Cochabambino',
+                  icon: Icons.restaurant_menu_rounded,
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Ingresa el nombre del plato';
+                  }
+                  if (value.trim().length < 3) {
+                    return 'El nombre es demasiado corto';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _precioOfertaController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                    RegExp(r'^\d*[,.]?\d{0,2}'),
+                  ),
+                ],
+                decoration: _inputDecoration(
+                  label: 'Precio de oferta (Bs)',
+                  hint: 'Ej. 25.00',
+                  icon: Icons.attach_money_rounded,
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Ingresa el precio';
+                  }
+
+                  final precio = double.tryParse(
+                    value.trim().replaceAll(',', '.'),
+                  );
+
+                  if (precio == null || precio <= 0) {
+                    return 'Ingresa un monto válido';
+                  }
+
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descripcionController,
+                textCapitalization: TextCapitalization.sentences,
+                maxLines: 4,
+                maxLength: 250,
+                decoration: _inputDecoration(
+                  label: 'Descripción / Guarniciones',
+                  hint: 'Ej. Incluye arroz, papa frita y ensalada',
+                  icon: Icons.notes_rounded,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Disponible para servir ahora',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Los comensales podrán ver que está disponible.',
+                ),
+                activeColor: primaryColor,
+                value: _disponibleAhora,
+                onChanged: _isLoading
+                    ? null
+                    : (value) {
+                        setState(() => _disponibleAhora = value);
+                      },
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                height: 52,
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _publicarPlatoDelDia,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: primaryColor.withOpacity(.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Publicar Plato del Día', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ? const SizedBox(
+                            key: ValueKey('loading'),
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : const Text(
+                            'Publicar Plato del Día',
+                            key: ValueKey('label'),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String label,
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: Colors.white,
+      counterText: '',
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(
+          color: Color(0xFFD64E28),
+          width: 2,
         ),
       ),
     );

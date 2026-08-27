@@ -1,38 +1,38 @@
 class PlatoDiaItem {
   final int id;
+  final int establecimientoId;
   final String tituloOferta;
   final String? descripcionOferta;
   final double precioOfertaBs;
   final bool disponibleAhora;
-  final String? imagenUrl;
-  final String nombreEstablecimiento;
-  final String? direccionEstablecimiento;
+  final String nombreRestaurante;
+  final double? latitud;
+  final double? longitud;
 
   PlatoDiaItem({
     required this.id,
+    required this.establecimientoId,
     required this.tituloOferta,
     this.descripcionOferta,
     required this.precioOfertaBs,
     required this.disponibleAhora,
-    this.imagenUrl,
-    required this.nombreEstablecimiento,
-    this.direccionEstablecimiento,
+    required this.nombreRestaurante,
+    this.latitud,
+    this.longitud,
   });
 
   factory PlatoDiaItem.fromJson(Map<String, dynamic> json) {
-    // Extracción de datos con JOIN relacional
-    final platillo = json['platillos_r_sabor'] as Map<String, dynamic>?;
-    final establecimiento = json['establecimientos_r_sabor'] as Map<String, dynamic>?;
-
+    final estab = json['establecimientos_r_sabor'];
     return PlatoDiaItem(
       id: json['id'] as int,
-      tituloOferta: json['titulo_oferta'] as String? ?? '',
-      descripcionOferta: json['descripcion_oferta'] as String?,
+      establecimientoId: json['establecimiento_id'] as int,
+      tituloOferta: json['titulo_oferta'] ?? '',
+      descripcionOferta: json['descripcion_oferta'],
       precioOfertaBs: (json['precio_oferta_bs'] as num).toDouble(),
-      disponibleAhora: json['disponible_ahora'] as bool? ?? true,
-      imagenUrl: platillo != null ? platillo['imagen_url'] as String? : null,
-      nombreEstablecimiento: establecimiento != null ? establecimiento['nombre_comercial'] as String? ?? '' : '',
-      direccionEstablecimiento: establecimiento != null ? establecimiento['direccion_texto'] as String? : null,
+      disponibleAhora: json['disponible_ahora'] ?? true,
+      nombreRestaurante: estab?['nombre_comercial'] ?? 'Restaurante',
+      latitud: estab?['latitud'] != null ? (estab['latitud'] as num).toDouble() : null,
+      longitud: estab?['longitud'] != null ? (estab['longitud'] as num).toDouble() : null,
     );
   }
 }
