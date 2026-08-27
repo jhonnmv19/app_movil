@@ -40,10 +40,11 @@ class EstablecimientoService {
     }
   }
 
-  /// Obtiene platillos populares filtrados por texto y/o categoría
+  /// Obtiene platillos populares filtrados por texto, categoría y/o precio máximo
   Future<List<Map<String, dynamic>>> obtenerPlatosPopulares({
     String query = '', 
     String? categoria,
+    double? precioMaximo,
   }) async {
     try {
       // Se utiliza PostgrestFilterBuilder explícito para permitir encadenamiento dinámico
@@ -58,8 +59,12 @@ class EstablecimientoService {
         builder = builder.ilike('nombre', '%$query%');
       }
 
-      if (categoria != null && categoria.isNotEmpty) {
+      if (categoria != null && categoria.isNotEmpty && categoria != 'Todos') {
         builder = builder.eq('categoria', categoria);
+      }
+
+      if (precioMaximo != null && precioMaximo > 0) {
+        builder = builder.lte('precio_bs', precioMaximo);
       }
 
       final response = await builder;
