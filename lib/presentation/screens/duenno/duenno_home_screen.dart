@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/establecimiento_model.dart';
+import '../../../data/services/establecimiento_service.dart';
+import '../../../data/services/session_service.dart';
 
 class DuennoHomeScreen extends StatefulWidget {
   const DuennoHomeScreen({super.key});
@@ -10,30 +13,99 @@ class DuennoHomeScreen extends StatefulWidget {
 }
 
 class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
-  bool _estaAbierto = true;
+  final EstablecimientoService _service = EstablecimientoService();
 
-  final String _nombreLocal = 'Restaurante Don Sabor';
-  final String _estadoSolicitud = 'aprobado';
+  bool _isLoading = true;
+  bool _estaAbierto = false;
+  bool _actualizandoEstado = false;
+
+  EstablecimientoModel? _establecimiento;
+  String _estadoSolicitud = 'PENDIENTE';
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarDatosIniciales();
+  }
+
+  Future<void> _cargarDatosIniciales() async {
+    setState(() => _isLoading = true);
+
+    // Obtener usuario autenticado desde SessionService
+    final usuario = SessionService().usuarioActual;
+
+    if (usuario != null) {
+      final estab = await _service.obtenerEstablecimientoPorDueno(usuario.id);
+      final estadoSol =
+          await _service.obtenerEstadoSolicitudUsuario(usuario.id);
+
+      if (mounted) {
+        setState(() {
+          _establecimiento = estab;
+          _estaAbierto = estab?.estadoLocal == 'abierto';
+          _estadoSolicitud = estadoSol;
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _toggleEstadoLocal(bool nuevoEstado) async {
+    if (_establecimiento == null) return;
+
+    setState(() {
+      _actualizandoEstado = true;
+      _estaAbierto = nuevoEstado; // Actualización optimista de interfaz
+    });
+
+    try {
+      final estadoStr = nuevoEstado ? 'abierto' : 'cerrado';
+      await _service.actualizarEstadoLocal(_establecimiento!.id, estadoStr);
+    } catch (e) {
+      if (mounted) {
+        // Revertir cambio si ocurre un fallo en Supabase
+        setState(() => _estaAbierto = !nuevoEstado);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al actualizar el estado del local'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _actualizandoEstado = false);
+      }
+    }
+  }
 
   void _abrirSolicitudes() {
     Navigator.pushNamed(
       context,
       AppRoutes.duennoRequests,
-      arguments: const {'establecimientoId': 1},
+      arguments: {'establecimientoId': _establecimiento?.id ?? 0},
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.primaryOrange),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: SafeArea(
         child: RefreshIndicator(
           color: AppTheme.primaryOrange,
-          onRefresh: () async {
-            await Future<void>.delayed(const Duration(milliseconds: 500));
-            if (mounted) setState(() {});
-          },
+          onRefresh: _cargarDatosIniciales,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -57,10 +129,14 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
                   Expanded(
                     child: _StatCard(
                       title: 'Menú Digital',
-                      value: '12 Platos',
+                      value: _establecimiento != null
+                          ? 'Ver Platos'
+                          : 'Sin Local',
                       icon: Icons.menu_book_rounded,
                       color: Colors.blue,
-                      onTap: () {},
+                      onTap: () {
+                        // Navegación opcional al menú o platillos
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -83,6 +159,9 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final nombreLocal =
+        _establecimiento?.nombreComercial ?? 'Sin Registro de Local';
+
     return Row(
       children: [
         Expanded(
@@ -98,7 +177,7 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                _nombreLocal,
+                nombreLocal,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -109,10 +188,10 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
           ),
         ),
         const SizedBox(width: 12),
-        CircleAvatar(
+        const CircleAvatar(
           radius: 25,
           backgroundColor: AppTheme.accentLightOrange,
-          child: const Icon(
+          child: Icon(
             Icons.store_rounded,
             color: AppTheme.primaryOrange,
             size: 27,
@@ -167,14 +246,19 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
               ],
             ),
           ),
-          Switch.adaptive(
-            value: _estaAbierto,
-            activeColor: Colors.green,
-            onChanged: (value) {
-              setState(() => _estaAbierto = value);
-              // TODO: Actualizar estado_local en Supabase.
-            },
-          ),
+          _actualizandoEstado
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Switch.adaptive(
+                  value: _estaAbierto,
+                  activeColor: Colors.green,
+                  onChanged: _establecimiento == null
+                      ? null
+                      : _toggleEstadoLocal,
+                ),
         ],
       ),
     );
@@ -276,7 +360,7 @@ class _StatCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: color.withOpacity(.1),
+                backgroundColor: color.withOpacity(0.1),
                 child: Icon(icon, color: color, size: 20),
               ),
               const SizedBox(height: 12),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../data/services/session_service.dart';
+import '../../../data/services/usuarios_service.dart';
 
 class DuennoProfileScreen extends StatefulWidget {
   const DuennoProfileScreen({super.key});
@@ -12,66 +13,82 @@ class DuennoProfileScreen extends StatefulWidget {
 
 class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
   late Future<Map<String, dynamic>?> _perfilFuture;
+  final UsuariosService _usuariosService = UsuariosService();
 
   @override
   void initState() {
     super.initState();
-    _perfilFuture = _obtenerPerfilDuenno();
+    _perfilFuture = _cargarPerfil();
   }
 
-  Future<Map<String, dynamic>?> _obtenerPerfilDuenno() async {
-    final user = Supabase.instance.client.auth.currentUser;
-
-    if (user == null || user.email == null) return null;
-
-    final response = await Supabase.instance.client
-        .from('usuarios_r_sabor')
-        .select('''
-          id,
-          nombre_completo,
-          email,
-          telefono,
-          rol,
-          estado,
-          establecimientos_r_sabor (
-            id,
-            nombre_comercial,
-            direccion_texto,
-            estado_local,
-            verificado,
-            categorias_negocio_r_sabor ( nombre )
-          )
-        ''')
-        .eq('email', user.email!)
-        .maybeSingle();
-
-    return response;
+  Future<Map<String, dynamic>?> _cargarPerfil() async {
+    final usuarioActual = SessionService().usuarioActual;
+    if (usuarioActual == null) return null;
+    return await _usuariosService.obtenerPerfilDuenno(usuarioActual.id);
   }
 
   Future<void> _recargarPerfil() async {
     setState(() {
-      _perfilFuture = _obtenerPerfilDuenno();
+      _perfilFuture = _cargarPerfil();
     });
-
     await _perfilFuture;
   }
 
   Future<void> _cerrarSesion() async {
-    await Supabase.instance.client.auth.signOut();
+    // Limpia la sesión local en memoria
+    SessionService().cerrarSesion();
 
     if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
 
-    Navigator.of(context).pushReplacementNamed('/login');
+  Map<String, dynamic>? _normalizarEstablecimiento(dynamic data) {
+    if (data == null) return null;
+
+    if (data is List && data.isNotEmpty) {
+      return Map<String, dynamic>.from(data.first as Map);
+    }
+
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    return null;
+  }
+
+  String _obtenerCategoria(Map<String, dynamic>? establecimiento) {
+    final categoriaRaw = establecimiento?['categorias_negocio_r_sabor'];
+
+    if (categoriaRaw is List && categoriaRaw.isNotEmpty) {
+      final first = categoriaRaw.first;
+      if (first is Map) {
+        return (first['nombre'] ?? 'Sin categoría').toString();
+      }
+    }
+
+    if (categoriaRaw is Map) {
+      return (categoriaRaw['nombre'] ?? 'Sin categoría').toString();
+    }
+
+    return 'Sin categoría';
+  }
+
+  String _obtenerEstadoLocal(Map<String, dynamic>? establecimiento) {
+    final estado = establecimiento?['estado_local'];
+    if (estado == null || estado.toString().isEmpty) {
+      return 'Sin estado';
+    }
+    return estado.toString();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: const Color(0xFFF7F7F7),
       appBar: AppBar(
         title: const Text('Mi Perfil de Negocio'),
         elevation: 0,
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: const Color(0xFFF7F7F7),
         surfaceTintColor: Colors.transparent,
       ),
       body: FutureBuilder<Map<String, dynamic>?>(
@@ -85,174 +102,116 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
             );
           }
 
-          if (snapshot.hasError) {
-            return _ErrorView(
-              onRetry: _recargarPerfil,
-            );
+          if (snapshot.hasError || snapshot.data == null) {
+            return _ErrorView(onRetry: _recargarPerfil);
           }
 
-          final data = snapshot.data;
+          final data = snapshot.data!;
+          final establecimiento = _normalizarEstablecimiento(
+            data['establecimientos_r_sabor'],
+          );
 
-          if (data == null) {
-            return const Center(
-              child: Text('No se pudo cargar la información del usuario.'),
-            );
-          }
-
-          final establecimientos =
-              data['establecimientos_r_sabor'] as List<dynamic>?;
-
-          final establecimiento =
-              establecimientos != null && establecimientos.isNotEmpty
-                  ? establecimientos.first as Map<String, dynamic>
-                  : null;
-
-          final categoria = establecimiento?[
-                  'categorias_negocio_r_sabor']?['nombre'] ??
-              'Sin categoría';
-
+          final categoria = _obtenerCategoria(establecimiento);
           final usuarioActivo = data['estado'] == 'activo';
           final verificado = establecimiento?['verificado'] == true;
+          final nombreNegocio =
+              establecimiento?['nombre_comercial'] ?? 'Sin nombre';
+          final descripcion = establecimiento?['descripcion'] ??
+              'Aún no agregaste una descripción del negocio.';
+          final direccion =
+              establecimiento?['direccion_texto'] ?? 'No especificada';
+          final estadoLocal = _obtenerEstadoLocal(establecimiento);
+          final calificacion =
+              ((establecimiento?['calificacion_promedio'] as num?) ?? 0)
+                  .toDouble();
 
           return RefreshIndicator(
             color: AppTheme.primaryOrange,
             onRefresh: _recargarPerfil,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               children: [
-                Center(
-                  child: Column(
-                    children: [
-                      CircleAvatar(
-                        radius: 45,
-                        backgroundColor: AppTheme.accentLightOrange,
-                        child: const Icon(
-                          Icons.storefront_rounded,
-                          size: 48,
-                          color: AppTheme.primaryOrange,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        data['nombre_completo'] ?? 'Sin Nombre',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Chip(
-                        avatar: Icon(
-                          usuarioActivo
-                              ? Icons.check_circle
-                              : Icons.warning_rounded,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                        label: Text(
-                          'Rol: ${(data['rol'] ?? 'dueno').toString().toUpperCase()}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        backgroundColor: AppTheme.primaryOrange,
-                      ),
-                    ],
-                  ),
+                _OwnerHeader(
+                  nombre: data['nombre_completo'] ?? 'Sin Nombre',
+                  rol: (data['rol'] ?? 'dueno').toString().toUpperCase(),
+                  usuarioActivo: usuarioActivo,
                 ),
-                const SizedBox(height: 26),
-                _SectionTitle(title: 'Datos Personales'),
-                const SizedBox(height: 10),
-                _InfoCard(
-                  children: [
-                    _InfoTile(
-                      icon: Icons.email_outlined,
-                      title: 'Correo Electrónico',
-                      value: data['email'] ?? 'No registrado',
-                    ),
-                    _InfoTile(
-                      icon: Icons.phone_outlined,
-                      title: 'Teléfono de Contacto',
-                      value: data['telefono'] ?? 'No registrado',
-                      showDivider: false,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 26),
-                _SectionTitle(title: 'Mi Establecimiento'),
-                const SizedBox(height: 10),
+                const SizedBox(height: 22),
                 if (establecimiento != null)
-                  _InfoCard(
-                    children: [
-                      _InfoTile(
-                        icon: Icons.restaurant_rounded,
-                        title: 'Nombre Comercial',
-                        value: establecimiento['nombre_comercial'] ??
-                            'Sin Nombre',
-                        trailing: Icon(
-                          verificado
-                              ? Icons.verified_rounded
-                              : Icons.hourglass_top_rounded,
-                          color: verificado ? Colors.blue : Colors.amber,
-                        ),
-                      ),
-                      _InfoTile(
-                        icon: Icons.category_outlined,
-                        title: 'Categoría',
-                        value: categoria,
-                      ),
-                      _InfoTile(
-                        icon: Icons.location_on_outlined,
-                        title: 'Dirección',
-                        value: establecimiento['direccion_texto'] ??
-                            'No especificada',
-                        showDivider: false,
-                      ),
-                    ],
+                  _BusinessProfileCard(
+                    nombreNegocio: nombreNegocio,
+                    categoria: categoria,
+                    estadoLocal: estadoLocal,
+                    verificado: verificado,
+                    descripcion: descripcion,
+                    direccion: direccion,
+                    calificacion: calificacion,
                   )
                 else
                   Card(
                     color: Colors.amber.shade50,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       side: BorderSide(color: Colors.amber.shade200),
                     ),
-                    child: const ListTile(
-                      leading: Icon(
-                        Icons.info_outline,
-                        color: Colors.amber,
-                      ),
-                      title: Text(
-                        'Sin establecimiento asignado',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        'Aún no tienes un negocio verificado registrado.',
+                    child: const Padding(
+                      padding: EdgeInsets.all(18),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.amber),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Todavía no tienes un restaurante registrado.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 26),
+                const _SectionTitle(title: 'Datos personales'),
+                const SizedBox(height: 10),
+                _InfoCard(
+                  children: [
+                    _InfoTile(
+                      icon: Icons.email_outlined,
+                      title: 'Correo electrónico',
+                      value: data['email'] ?? 'No registrado',
+                    ),
+                    _InfoTile(
+                      icon: Icons.phone_outlined,
+                      title: 'Teléfono de contacto',
+                      value: data['telefono'] ?? 'No registrado',
+                      showDivider: false,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                const _SectionTitle(title: 'Acciones'),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: _cerrarSesion,
-                    icon: const Icon(Icons.logout),
+                    icon: const Icon(Icons.logout_rounded),
                     label: const Text(
-                      'Cerrar Sesión',
+                      'Cerrar sesión',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade50,
                       foregroundColor: Colors.red,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
                       side: BorderSide(color: Colors.red.shade200),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                   ),
@@ -261,6 +220,280 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _OwnerHeader extends StatelessWidget {
+  final String nombre;
+  final String rol;
+  final bool usuarioActivo;
+
+  const _OwnerHeader({
+    required this.nombre,
+    required this.rol,
+    required this.usuarioActivo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const CircleAvatar(
+            radius: 44,
+            backgroundColor: AppTheme.accentLightOrange,
+            child: Icon(
+              Icons.storefront_rounded,
+              size: 42,
+              color: AppTheme.primaryOrange,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            nombre,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: usuarioActivo
+                  ? AppTheme.primaryOrange
+                  : Colors.orange.shade100,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  usuarioActivo ? Icons.check_circle : Icons.timelapse_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  rol,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BusinessProfileCard extends StatelessWidget {
+  final String nombreNegocio;
+  final String categoria;
+  final String estadoLocal;
+  final bool verificado;
+  final String descripcion;
+  final String direccion;
+  final double calificacion;
+
+  const _BusinessProfileCard({
+    required this.nombreNegocio,
+    required this.categoria,
+    required this.estadoLocal,
+    required this.verificado,
+    required this.descripcion,
+    required this.direccion,
+    required this.calificacion,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final estadoColor = verificado ? Colors.green : Colors.orange;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  nombreNegocio,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: estadoColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      verificado
+                          ? Icons.verified_rounded
+                          : Icons.pending_rounded,
+                      size: 16,
+                      color: estadoColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      verificado ? 'Verificado' : 'Pendiente',
+                      style: TextStyle(
+                        color: estadoColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _MiniPill(icon: Icons.category_outlined, label: categoria),
+              const SizedBox(width: 8),
+              _MiniPill(icon: Icons.circle, label: estadoLocal),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                calificacion.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'calificación',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Descripción',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            descripcion,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Dirección',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.location_on_outlined,
+                  size: 18, color: AppTheme.primaryOrange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  direccion,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _MiniPill({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.accentLightOrange,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.primaryOrange),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.primaryOrange,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -307,14 +540,12 @@ class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
-  final Widget? trailing;
   final bool showDivider;
 
   const _InfoTile({
     required this.icon,
     required this.title,
     required this.value,
-    this.trailing,
     this.showDivider = true,
   });
 
@@ -323,7 +554,8 @@ class _InfoTile extends StatelessWidget {
     return Column(
       children: [
         ListTile(
-          leading: Icon(icon, color: AppTheme.primaryOrange),
+          // SE REMOVIÓ EL 'const' DE AQUÍ
+          leading: Icon(icon, color: AppTheme.primaryOrange), 
           title: Text(
             title,
             style: const TextStyle(
@@ -338,7 +570,6 @@ class _InfoTile extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          trailing: trailing,
         ),
         if (showDivider) const Divider(height: 1),
       ],

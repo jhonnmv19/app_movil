@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../data/services/establecimiento_service.dart';
 
 class RequestsScreen extends StatefulWidget {
   final int establecimientoId;
@@ -19,6 +19,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
   final _tituloController = TextEditingController();
   final _descripcionController = TextEditingController();
   final _precioOfertaController = TextEditingController();
+
+  final _service = EstablecimientoService();
 
   bool _disponibleAhora = true;
   bool _isLoading = false;
@@ -51,15 +53,13 @@ class _RequestsScreenState extends State<RequestsScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await Supabase.instance.client
-          .from('plato_del_dia_r_sabor')
-          .insert({
-        'establecimiento_id': widget.establecimientoId,
-        'titulo_oferta': _tituloController.text.trim(),
-        'descripcion_oferta': _descripcionController.text.trim(),
-        'precio_oferta_bs': precio,
-        'disponible_ahora': _disponibleAhora,
-      });
+      await _service.publicarPlatoDelDia(
+        establecimientoId: widget.establecimientoId,
+        tituloOferta: _tituloController.text.trim(),
+        descripcionOferta: _descripcionController.text.trim(),
+        precioOfertaBs: precio,
+        disponibleAhora: _disponibleAhora,
+      );
 
       if (!mounted) return;
 

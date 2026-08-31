@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/usuario_model.dart';
 import 'session_service.dart';
@@ -12,27 +13,67 @@ class UsuariosService {
           .from('usuarios_r_sabor')
           .select()
           .eq('email', email)
-          .single();
+          .maybeSingle();
+
+      if (response == null) return null;
 
       final usuario = UsuarioModel.fromJson(response);
       SessionService().iniciarSesion(usuario);
       return usuario;
     } catch (e) {
-      print('Error en login: $e');
+      debugPrint('Error en login: $e');
       return null;
     }
   }
 
-  // READ
-  Future<List<UsuarioModel>> obtenerUsuarios() async {
-    final response = await _supabase
-        .from('usuarios_r_sabor')
-        .select()
-        .order('fecha_registro', ascending: false);
+  // OBTENER PERFIL COMPLETO DEL DUEÑO (Con establecimiento y categoría)
+  Future<Map<String, dynamic>?> obtenerPerfilDuenno(int usuarioId) async {
+    try {
+      final response = await _supabase
+          .from('usuarios_r_sabor')
+          .select('''
+            id,
+            nombre_completo,
+            email,
+            telefono,
+            rol,
+            estado,
+            establecimientos_r_sabor!dueno_id (
+              id,
+              nombre_comercial,
+              descripcion,
+              direccion_texto,
+              estado_local,
+              verificado,
+              calificacion_promedio,
+              categorias_negocio_r_sabor ( nombre )
+            )
+          ''')
+          .eq('id', usuarioId)
+          .maybeSingle();
 
-    return (response as List)
-        .map((json) => UsuarioModel.fromJson(json))
-        .toList();
+      return response;
+    } catch (e) {
+      debugPrint('Error obteniendo perfil del dueño: $e');
+      return null;
+    }
+  }
+
+  // READ - Listar todos los usuarios
+  Future<List<UsuarioModel>> obtenerUsuarios() async {
+    try {
+      final response = await _supabase
+          .from('usuarios_r_sabor')
+          .select()
+          .order('fecha_registro', ascending: false);
+
+      return (response as List)
+          .map((json) => UsuarioModel.fromJson(json))
+          .toList();
+    } catch (e) {
+      debugPrint('Error al obtener usuarios: $e');
+      return [];
+    }
   }
 
   // UPDATE ESTADO (Inactivar / Bloquear / Activar)
@@ -55,4 +96,22 @@ class UsuariosService {
   Future<void> eliminarUsuario(int usuarioId) async {
     await _supabase.from('usuarios_r_sabor').delete().eq('id', usuarioId);
   }
+
+// UPDATE PERFIL DE USUARIO
+Future<bool> actualizarPerfil(
+    int usuarioId, String nuevoNombre, String? nuevoTelefono) async {
+  try {
+    await _supabase
+        .from('usuarios_r_sabor')
+        .update({
+          'nombre_completo': nuevoNombre,
+          'telefono': nuevoTelefono,
+        })
+        .eq('id', usuarioId);
+    return true;
+  } catch (e) {
+    debugPrint('Error actualizando perfil: $e');
+    return false;
+  }
+}
 }

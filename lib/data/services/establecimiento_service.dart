@@ -7,7 +7,7 @@ import '../models/usuario_model.dart';
 class EstablecimientoService {
   final SupabaseClient client = Supabase.instance.client;
 
-  /// Obtiene el usuario autenticado actual desde usuarios_r_sabor
+  /// Obtiene el usuario autenticado actual desde usuarios_r_sabor a través de su email
   Future<UsuarioModel?> obtenerPerfilUsuarioActual() async {
     try {
       final authUser = client.auth.currentUser;
@@ -40,6 +40,24 @@ class EstablecimientoService {
     }
   }
 
+  /// Obtiene el primer establecimiento perteneciente al dueño autenticado
+  Future<EstablecimientoModel?> obtenerEstablecimientoPorDueno(int duenoId) async {
+    try {
+      final response = await client
+          .from('establecimientos_r_sabor')
+          .select('*')
+          .eq('dueno_id', duenoId)
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) return null;
+      return EstablecimientoModel.fromJson(response);
+    } catch (e) {
+      debugPrint('Error obteniendo establecimiento del dueño: $e');
+      return null;
+    }
+  }
+
   /// Obtiene platillos populares filtrados por texto, categoría y/o precio máximo
   Future<List<Map<String, dynamic>>> obtenerPlatosPopulares({
     String query = '', 
@@ -47,7 +65,6 @@ class EstablecimientoService {
     double? precioMaximo,
   }) async {
     try {
-      // Se utiliza PostgrestFilterBuilder explícito para permitir encadenamiento dinámico
       PostgrestFilterBuilder builder = client.from('platillos_r_sabor').select('''
         *,
         establecimientos_r_sabor (
@@ -131,7 +148,7 @@ class EstablecimientoService {
     }
   }
 
-  /// 1. Obtener lista de locales/establecimientos abiertos
+  /// Obtener lista de locales/establecimientos abiertos
   Future<List<EstablecimientoModel>> obtenerEstablecimientosAbiertos() async {
     try {
       final response = await client
@@ -147,11 +164,11 @@ class EstablecimientoService {
     }
   }
 
-  /// 2. Obtener lista de platos del día disponibles
+  /// Obtener lista de platos del día disponibles
   Future<List<PlatoDiaItem>> obtenerPlatosDelDiaDisponibles() async {
     try {
       final response = await client
-          .from('platos_dia_r_sabor')
+          .from('plato_del_dia_r_sabor')
           .select('''
             *,
             establecimientos_r_sabor (
@@ -160,13 +177,67 @@ class EstablecimientoService {
               longitud
             )
           ''')
-          .eq('disponible', true);
+          .eq('disponible_ahora', true);
 
       final list = List<Map<String, dynamic>>.from(response as List);
       return list.map((e) => PlatoDiaItem.fromJson(e)).toList();
     } catch (e) {
       debugPrint('Error obteniendo platos del día: $e');
       return [];
+    }
+  }
+
+  /// Publicar un nuevo plato del día
+  Future<void> publicarPlatoDelDia({
+    required int establecimientoId,
+    required String tituloOferta,
+    required String descripcionOferta,
+    required double precioOfertaBs,
+    required bool disponibleAhora,
+  }) async {
+    try {
+      await client.from('plato_del_dia_r_sabor').insert({
+        'establecimiento_id': establecimientoId,
+        'titulo_oferta': tituloOferta,
+        'descripcion_oferta': descripcionOferta,
+        'precio_oferta_bs': precioOfertaBs,
+        'disponible_ahora': disponibleAhora,
+      });
+    } catch (e) {
+      debugPrint('Error publicando plato del día: $e');
+      rethrow;
+    }
+  }
+
+  /// Cambia el estado del local ('abierto' / 'cerrado') en tiempo real
+  Future<void> actualizarEstadoLocal(int establecimientoId, String nuevoEstado) async {
+    try {
+      await client
+          .from('establecimientos_r_sabor')
+          .update({'estado_local': nuevoEstado})
+          .eq('id', establecimientoId);
+    } catch (e) {
+      debugPrint('Error actualizando estado del local: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtiene el estado de la última solicitud del usuario
+  Future<String> obtenerEstadoSolicitudUsuario(int usuarioId) async {
+    try {
+      final response = await client
+          .from('solicitudes_registro_r_sabor')
+          .select('estado_solicitud')
+          .eq('usuario_id', usuarioId)
+          .order('fecha_envio', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) return 'sin_solicitud';
+      return response['estado_solicitud'] ?? 'pendiente';
+    } catch (e) {
+      debugPrint('Error obteniendo estado de solicitud: $e');
+      return 'pendiente';
     }
   }
 }

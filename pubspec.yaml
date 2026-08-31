@@ -42,6 +42,7 @@ dependencies:
   http: ^1.2.0        # Necesario para obtener las coordenadas de la ruta
   geolocator: ^12.0.0  # Necesario para obtener el GPS del usuario
   shared_preferences: ^2.2.2 
+  file_picker: ^8.0.0
 
 dev_dependencies:
   flutter_test:

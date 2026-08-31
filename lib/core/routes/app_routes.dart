@@ -8,13 +8,13 @@ import '../../presentation/screens/auth/register_screen.dart';
 // Administración
 import '../../presentation/screens/admin/admin_dashboard_screen.dart';
 
-// Dueño de Local
+// Flujo Dueño de Local
 import '../../presentation/screens/duenno/duenno_main_navigation_screen.dart';
 import '../../presentation/screens/duenno/duenno_home_screen.dart';
 import '../../presentation/screens/duenno/requests_screen.dart';
 import '../../presentation/screens/duenno/duenno_profile_screen.dart';
 
-// Comensal / Cliente
+// Flujo Comensal / Cliente
 import '../../presentation/screens/comensal/comensal_main_navigation_screen.dart';
 import '../../presentation/screens/comensal/home_screen.dart';
 import '../../presentation/screens/comensal/map_screen.dart';
@@ -22,18 +22,20 @@ import '../../presentation/screens/comensal/plato_dia_screen.dart';
 import '../../presentation/screens/comensal/profile_screen.dart';
 
 class AppRoutes {
-  // --- Nombres de Rutas ---
+  // --- Nombres de Rutas Estáticas y Dinámicas ---
   static const String welcome = '/';
   static const String login = '/login';
   static const String register = '/register';
 
   static const String adminDashboard = '/admin-dashboard';
 
+  // Rutas - Dueño
   static const String duennoMainNav = '/duenno-main-nav';
   static const String duennoHome = '/duenno-home';
-  static const String duennoRequests = '/duenno-requests';
+  static const String duennoRequests = '/duenno-requests'; // Publicador de Plato del Día (Ruta dinámica)
   static const String duennoProfile = '/duenno-profile';
 
+  // Rutas - Comensal
   static const String comensalMainNav = '/comensal-main-nav';
   static const String home = '/home';
   static const String explorer = '/explorer';
@@ -59,7 +61,6 @@ class AppRoutes {
         // Comensal
         comensalMainNav: (context) => const ComensalMainNavigationScreen(),
         home: (context) => const HomeScreen(),
-        // Redirigido a HomeScreen o ComensalMainNavigationScreen mientras se crea ExplorerScreen
         explorer: (context) => const HomeScreen(),
         map: (context) => const MapScreen(),
         platoDelDia: (context) => const PlatoDiaScreen(),

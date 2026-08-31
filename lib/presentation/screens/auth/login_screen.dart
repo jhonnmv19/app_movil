@@ -34,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final emailIngresado = _emailController.text.trim().toLowerCase();
       final passwordIngresada = _passwordController.text;
 
-      // 1. Consultar directamente el usuario en la tabla personalizada usuarios_r_sabor
+      // 1. Consultar directamente en usuarios_r_sabor
       final response = await supabase
           .from('usuarios_r_sabor')
           .select()
@@ -43,33 +43,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      // Si no existe un registro con ese correo
+      // Imprimir respuesta en consola para depuración
+      print('--> RESPUESTA SUPABASE USUARIO: $response');
+
       if (response == null) {
         _mostrarSnackBar('El correo electrónico no está registrado', Colors.redAccent);
         return;
       }
 
-      // 2. Verificar la contraseña enviada contra la registrada
+      // 2. Verificar Contraseña
       final String passwordEnBD = response['password_hash']?.toString() ?? '';
       if (passwordEnBD != passwordIngresada) {
         _mostrarSnackBar('Contraseña incorrecta. Verifica tus credenciales.', Colors.redAccent);
         return;
       }
 
-      // 3. Validar el estado de la cuenta
-      final estado = response['estado']?.toString().toLowerCase() ?? 'activo';
-      if (estado == 'bloqueado' || estado == 'inactivo') {
-        _mostrarSnackBar('Tu cuenta está actualmente $estado.', Colors.redAccent);
+      // 3. Validar Estado de la Cuenta
+      final String rawEstado = response['estado']?.toString().toLowerCase() ?? 'activo';
+      if (rawEstado == 'bloqueado' || rawEstado == 'inactivo') {
+        _mostrarSnackBar('Tu cuenta está actualmente $rawEstado.', Colors.redAccent);
         return;
       }
 
-      // 4. Mapear datos al modelo y guardar en el singleton de SessionService
+      // 4. Mapear datos e Iniciar Sesión en Singleton
       final usuarioMap = Map<String, dynamic>.from(response);
       final usuarioActual = UsuarioModel.fromJson(usuarioMap);
       SessionService().iniciarSesion(usuarioActual);
 
-      // 5. Redirección según el rol del usuario
-      final rol = response['rol']?.toString().toLowerCase() ?? 'comensal';
+      // 5. Redirección según Rol
+      final String rol = response['rol']?.toString().toLowerCase() ?? 'comensal';
+      print('--> ROL DETECTADO: $rol');
 
       switch (rol) {
         case 'admin':
@@ -85,7 +88,9 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacementNamed(context, AppRoutes.comensalMainNav);
           break;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('--> ERROR EN LOGIN: $e');
+      print('--> STACKTRACE: $stackTrace');
       if (!mounted) return;
       _mostrarSnackBar('Error inesperado al iniciar sesión: $e', Colors.redAccent);
     } finally {
