@@ -9,6 +9,7 @@ void main() async {
 
   await Supabase.initialize(
     url: SupabaseConstants.url,
+    // ignore: deprecated_member_use
     anonKey: SupabaseConstants.anonKey,
   );
 

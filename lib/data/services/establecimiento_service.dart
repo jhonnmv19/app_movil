@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/establecimiento_model.dart';
@@ -7,7 +8,39 @@ import '../models/usuario_model.dart';
 class EstablecimientoService {
   final SupabaseClient client = Supabase.instance.client;
 
-  /// Obtiene el usuario autenticado actual desde usuarios_r_sabor a través de su email
+  // --- MÓDULO SUPABASE STORAGE ---
+
+  Future<String?> subirImagen({
+    File? fileBytes,
+    Uint8List? fileDataWeb,
+    required String bucket,
+    required String path,
+  }) async {
+    try {
+      if (kIsWeb) {
+        if (fileDataWeb == null) return null;
+        await client.storage.from(bucket).uploadBinary(
+              path,
+              fileDataWeb,
+              fileOptions: const FileOptions(upsert: true, cacheControl: '3600'),
+            );
+      } else {
+        if (fileBytes == null) return null;
+        await client.storage.from(bucket).upload(
+              path,
+              fileBytes,
+              fileOptions: const FileOptions(upsert: true, cacheControl: '3600'),
+            );
+      }
+      return client.storage.from(bucket).getPublicUrl(path);
+    } catch (e) {
+      debugPrint('Error subiendo archivo a Storage: $e');
+      return null;
+    }
+  }
+
+  // --- MÓDULO USUARIOS Y PERFIL ---
+
   Future<UsuarioModel?> obtenerPerfilUsuarioActual() async {
     try {
       final authUser = client.auth.currentUser;
@@ -27,7 +60,6 @@ class EstablecimientoService {
     }
   }
 
-  /// Actualiza datos personales del usuario
   Future<void> actualizarPerfil(int userId, String nuevoNombre, String nuevoTelefono) async {
     try {
       await client.from('usuarios_r_sabor').update({
@@ -40,7 +72,40 @@ class EstablecimientoService {
     }
   }
 
-  /// Obtiene el primer establecimiento perteneciente al dueño autenticado
+  Future<String> obtenerEstadoSolicitudUsuario(int usuarioId) async {
+    try {
+      final response = await client
+          .from('solicitudes_registro_r_sabor')
+          .select('estado_solicitud')
+          .eq('usuario_id', usuarioId)
+          .order('fecha_envio', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) return 'sin_solicitud';
+      return response['estado_solicitud'] ?? 'pendiente';
+    } catch (e) {
+      debugPrint('Error obteniendo estado de solicitud: $e');
+      return 'pendiente';
+    }
+  }
+
+  Future<void> enviarReporteSoporte(int usuarioId, String descripcion) async {
+    try {
+      await client.from('solicitudes_registro_r_sabor').insert({
+        'usuario_id': usuarioId,
+        'nombre_negocio_propuesto': 'REPORTE_SOPORTE',
+        'descripcion_negocio': descripcion,
+        'estado_solicitud': 'pendiente',
+      });
+    } catch (e) {
+      debugPrint('Error enviando reporte de soporte: $e');
+      rethrow;
+    }
+  }
+
+  // --- MÓDULO ESTABLECIMIENTOS ---
+
   Future<EstablecimientoModel?> obtenerEstablecimientoPorDueno(int duenoId) async {
     try {
       final response = await client
@@ -58,97 +123,6 @@ class EstablecimientoService {
     }
   }
 
-  /// Obtiene platillos populares filtrados por texto, categoría y/o precio máximo
-  Future<List<Map<String, dynamic>>> obtenerPlatosPopulares({
-    String query = '', 
-    String? categoria,
-    double? precioMaximo,
-  }) async {
-    try {
-      PostgrestFilterBuilder builder = client.from('platillos_r_sabor').select('''
-        *,
-        establecimientos_r_sabor (
-          id, nombre_comercial, latitud, longitud, direccion_texto, calificacion_promedio, dueno_id
-        )
-      ''').eq('disponible', true);
-
-      if (query.isNotEmpty) {
-        builder = builder.ilike('nombre', '%$query%');
-      }
-
-      if (categoria != null && categoria.isNotEmpty && categoria != 'Todos') {
-        builder = builder.eq('categoria', categoria);
-      }
-
-      if (precioMaximo != null && precioMaximo > 0) {
-        builder = builder.lte('precio_bs', precioMaximo);
-      }
-
-      final response = await builder;
-      return List<Map<String, dynamic>>.from(response as List);
-    } catch (e) {
-      debugPrint('Error obteniendo platos populares: $e');
-      return [];
-    }
-  }
-
-  /// Gestión de Favoritos: Obtener lista de IDs
-  Future<List<int>> obtenerIdsFavoritos(int comensalId) async {
-    try {
-      final res = await client
-          .from('favoritos_r_sabor')
-          .select('establecimiento_id')
-          .eq('comensal_id', comensalId);
-
-      final list = res as List<dynamic>;
-      return list
-          .map((e) => e['establecimiento_id'] is int
-              ? e['establecimiento_id'] as int
-              : int.parse(e['establecimiento_id'].toString()))
-          .toList();
-    } catch (e) {
-      debugPrint('Error obteniendo favoritos: $e');
-      return [];
-    }
-  }
-
-  /// Alternar estado de favorito (Agregar / Eliminar)
-  Future<void> toggleFavorito(int comensalId, int establecimientoId, bool esFavorito) async {
-    try {
-      if (esFavorito) {
-        await client.from('favoritos_r_sabor').insert({
-          'comensal_id': comensalId,
-          'establecimiento_id': establecimientoId,
-        });
-      } else {
-        await client
-            .from('favoritos_r_sabor')
-            .delete()
-            .eq('comensal_id', comensalId)
-            .eq('establecimiento_id', establecimientoId);
-      }
-    } catch (e) {
-      debugPrint('Error alternando favorito: $e');
-      rethrow;
-    }
-  }
-
-  /// Enviar reporte de soporte/incidencia
-  Future<void> enviarReporteSoporte(int usuarioId, String descripcion) async {
-    try {
-      await client.from('solicitudes_registro_r_sabor').insert({
-        'usuario_id': usuarioId,
-        'nombre_negocio_propuesto': 'REPORTE_SOPORTE',
-        'descripcion_negocio': descripcion,
-        'estado_solicitud': 'pendiente',
-      });
-    } catch (e) {
-      debugPrint('Error enviando reporte de soporte: $e');
-      rethrow;
-    }
-  }
-
-  /// Obtener lista de locales/establecimientos abiertos
   Future<List<EstablecimientoModel>> obtenerEstablecimientosAbiertos() async {
     try {
       final response = await client
@@ -164,15 +138,218 @@ class EstablecimientoService {
     }
   }
 
-  /// Obtener lista de platos del día disponibles
+  Future<void> actualizarEstadoLocal(int establecimientoId, String nuevoEstado) async {
+    try {
+      await client
+          .from('establecimientos_r_sabor')
+          .update({'estado_local': nuevoEstado})
+          .eq('id', establecimientoId);
+    } catch (e) {
+      debugPrint('Error actualizando estado del local: $e');
+      rethrow;
+    }
+  }
+
+  // --- MÓDULO PLATILLOS (MENÚ Y CONSULTAS) ---
+
+  Future<void> crearPlatillo({
+    required int establecimientoId,
+    required int categoriaPlatilloId,
+    required String nombre,
+    required String descripcion,
+    required double precioBs,
+    String? imagenUrl,
+    bool disponible = true,
+  }) async {
+    try {
+      await client.from('platillos_r_sabor').insert({
+        'establecimiento_id': establecimientoId,
+        'categoria_platillo_id': categoriaPlatilloId,
+        'nombre': nombre,
+        'descripcion': descripcion,
+        'precio_bs': precioBs,
+        'imagen_url': imagenUrl,
+        'disponible': disponible,
+      });
+    } catch (e) {
+      debugPrint('Error creando platillo: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerPlatillosPorEstablecimiento(int establecimientoId) async {
+    try {
+      final response = await client
+          .from('platillos_r_sabor')
+          .select('''
+            id,
+            nombre,
+            descripcion,
+            precio_bs,
+            imagen_url,
+            disponible,
+            categorias_platillos_r_sabor(id, nombre)
+          ''')
+          .eq('establecimiento_id', establecimientoId)
+          .order('id', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error obteniendo platillos del establecimiento: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerPlatosPopulares({
+    String query = '',
+    String? categoria,
+    double? precioMaximo,
+  }) async {
+    try {
+      dynamic builder = client.from('platillos_r_sabor').select('''
+        id,
+        nombre,
+        descripcion,
+        precio_bs,
+        imagen_url,
+        disponible,
+        categorias_platillos_r_sabor!inner(nombre),
+        establecimientos_r_sabor!inner(
+          id,
+          nombre_comercial,
+          direccion_texto,
+          calificacion_promedio,
+          latitud,
+          longitud,
+          dueno_id
+        )
+      ''').eq('disponible', true);
+
+      if (query.isNotEmpty) {
+        builder = builder.ilike('nombre', '%$query%');
+      }
+
+      if (categoria != null && categoria.isNotEmpty && categoria != 'Todos') {
+        builder = builder.eq('categorias_platillos_r_sabor.nombre', categoria);
+      }
+
+      if (precioMaximo != null && precioMaximo > 0) {
+        builder = builder.lte('precio_bs', precioMaximo);
+      }
+
+      final response = await builder;
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error obteniendo platos populares: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerCategorias() async {
+    try {
+      final response = await client
+          .from('categorias_platillos_r_sabor')
+          .select('id, nombre')
+          .order('nombre', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error obteniendo categorías: $e');
+      return [];
+    }
+  }
+
+  // --- MÓDULO FOTOS GALERÍA ---
+
+  Future<void> agregarFotoEstablecimiento({
+    required int establecimientoId,
+    required String imagenUrl,
+    bool esPrincipal = false,
+  }) async {
+    try {
+      await client.from('fotos_establecimiento_r_sabor').insert({
+        'establecimiento_id': establecimientoId,
+        'imagen_url': imagenUrl,
+        'es_principal': esPrincipal,
+      });
+    } catch (e) {
+      debugPrint('Error agregando foto del establecimiento: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerFotosEstablecimiento(int establecimientoId) async {
+    try {
+      final response = await client
+          .from('fotos_establecimiento_r_sabor')
+          .select('id, imagen_url, es_principal')
+          .eq('establecimiento_id', establecimientoId)
+          .order('id', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error obteniendo fotos del establecimiento: $e');
+      return [];
+    }
+  }
+
+  // --- MÓDULO PLATO DEL DÍA ---
+
+  Future<void> publicarPlatoDelDia({
+    required int establecimientoId,
+    required String tituloOferta,
+    required String descripcionOferta,
+    required double precioOfertaBs,
+    required bool disponibleAhora,
+    int? platilloId,
+  }) async {
+    try {
+      await client.from('plato_del_dia_r_sabor').insert({
+        'establecimiento_id': establecimientoId,
+        'titulo_oferta': tituloOferta,
+        'descripcion_oferta': descripcionOferta,
+        'precio_oferta_bs': precioOfertaBs,
+        'disponible_ahora': disponibleAhora,
+        'platillo_id': platilloId,
+      });
+    } catch (e) {
+      debugPrint('Error publicando plato del día: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> obtenerPlatosDelDiaPorEstablecimiento(int establecimientoId) async {
+    try {
+      final response = await client
+          .from('plato_del_dia_r_sabor')
+          .select('*')
+          .eq('establecimiento_id', establecimientoId)
+          .order('id', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      debugPrint('Error obteniendo ofertas del día del establecimiento: $e');
+      return [];
+    }
+  }
+
   Future<List<PlatoDiaItem>> obtenerPlatosDelDiaDisponibles() async {
     try {
       final response = await client
           .from('plato_del_dia_r_sabor')
           .select('''
-            *,
+            id,
+            establecimiento_id,
+            titulo_oferta,
+            descripcion_oferta,
+            precio_oferta_bs,
+            disponible_ahora,
+            platillos_r_sabor (
+              imagen_url
+            ),
             establecimientos_r_sabor (
               nombre_comercial,
+              direccion_texto,
               latitud,
               longitud
             )
@@ -187,57 +364,46 @@ class EstablecimientoService {
     }
   }
 
-  /// Publicar un nuevo plato del día
-  Future<void> publicarPlatoDelDia({
-    required int establecimientoId,
-    required String tituloOferta,
-    required String descripcionOferta,
-    required double precioOfertaBs,
-    required bool disponibleAhora,
-  }) async {
+  // --- MÓDULO FAVORITOS ---
+
+  Future<List<int>> obtenerIdsFavoritos(int comensalId) async {
     try {
-      await client.from('plato_del_dia_r_sabor').insert({
-        'establecimiento_id': establecimientoId,
-        'titulo_oferta': tituloOferta,
-        'descripcion_oferta': descripcionOferta,
-        'precio_oferta_bs': precioOfertaBs,
-        'disponible_ahora': disponibleAhora,
-      });
+      final res = await client
+          .from('favoritos_r_sabor')
+          .select('establecimiento_id')
+          .eq('comensal_id', comensalId)
+          .not('establecimiento_id', 'is', null);
+
+      final list = res as List<dynamic>;
+      return list
+          .map((e) => e['establecimiento_id'] is int
+              ? e['establecimiento_id'] as int
+              : int.parse(e['establecimiento_id'].toString()))
+          .toList();
     } catch (e) {
-      debugPrint('Error publicando plato del día: $e');
-      rethrow;
+      debugPrint('Error obteniendo favoritos: $e');
+      return [];
     }
   }
 
-  /// Cambia el estado del local ('abierto' / 'cerrado') en tiempo real
-  Future<void> actualizarEstadoLocal(int establecimientoId, String nuevoEstado) async {
+  Future<bool> toggleFavorito(int comensalId, int establecimientoId, bool esFavorito) async {
     try {
-      await client
-          .from('establecimientos_r_sabor')
-          .update({'estado_local': nuevoEstado})
-          .eq('id', establecimientoId);
+      if (esFavorito) {
+        await client
+            .from('favoritos_r_sabor')
+            .delete()
+            .eq('comensal_id', comensalId)
+            .eq('establecimiento_id', establecimientoId);
+      } else {
+        await client.from('favoritos_r_sabor').insert({
+          'comensal_id': comensalId,
+          'establecimiento_id': establecimientoId,
+        });
+      }
+      return true;
     } catch (e) {
-      debugPrint('Error actualizando estado del local: $e');
-      rethrow;
-    }
-  }
-
-  /// Obtiene el estado de la última solicitud del usuario
-  Future<String> obtenerEstadoSolicitudUsuario(int usuarioId) async {
-    try {
-      final response = await client
-          .from('solicitudes_registro_r_sabor')
-          .select('estado_solicitud')
-          .eq('usuario_id', usuarioId)
-          .order('fecha_envio', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (response == null) return 'sin_solicitud';
-      return response['estado_solicitud'] ?? 'pendiente';
-    } catch (e) {
-      debugPrint('Error obteniendo estado de solicitud: $e');
-      return 'pendiente';
+      debugPrint('Error alternando favorito: $e');
+      return false;
     }
   }
 }

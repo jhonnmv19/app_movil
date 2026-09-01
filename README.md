@@ -392,15 +392,62 @@ Posteriormente, los cambios podrán integrarse a la rama principal mediante un *
 Se propone utilizar la siguiente estructura:
 
 ```text
-main
-│
-├── develop
-│
-├── feature/home
-├── feature/explorer
-├── feature/ferias
-├── feature/ubicaciones
-└── feature/widgets
+ main.dart
+│   
+├───core
+│   ├───constants
+│   │       app_colors.dart
+│   │       supabase_constants.dart
+│   │       
+│   ├───routes
+│   │       app_routes.dart
+│   │       
+│   └───theme
+│           app_theme.dart
+│           
+├───data
+│   ├───models
+│   │       establecimiento_model.dart
+│   │       home_data_model.dart
+│   │       place_model.dart
+│   │       plato_dia_item.dart
+│   │       solicitud_model.dart
+│   │       usuario_model.dart
+│   │       
+│   └───services
+│           establecimiento_service.dart
+│           favoritos_service.dart
+│           session_service.dart
+│           solicitudes_service.dart
+│           usuarios_service.dart
+│           
+├───features
+└───presentation
+    ├───screens
+    │   ├───admin
+    │   │       admin_dashboard_screen.dart
+    │   │       
+    │   ├───auth
+    │   │       login_screen.dart
+    │   │       register_screen.dart
+    │   │       welcome_screen.dart
+    │   │       
+    │   ├───comensal
+    │   │       comensal_main_navigation_screen.dart
+    │   │       home_screen.dart
+    │   │       map_screen.dart
+    │   │       plato_dia_screen.dart
+    │   │       profile_screen.dart
+    │   │       
+    │   └───duenno
+    │           duenno_home_screen.dart
+    │           duenno_main_navigation_screen.dart
+    │           duenno_profile_screen.dart
+    │           requests_screen.dart
+    │           
+    └───widgets
+            custom_navbar.dart
+            shared_widgets.dart
 ```
 
 ### `main`

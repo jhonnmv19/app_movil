@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../data/models/usuario_model.dart';
 import '../../../data/models/solicitud_model.dart';
 import '../../../data/services/usuarios_service.dart';
 import '../../../data/services/solicitudes_service.dart';
+import '../../../data/services/reportes_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  const AdminDashboardScreen({Key? key}) : super(key: key);
 
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  // Servicios
   final UsuariosService _usuariosService = UsuariosService();
   final SolicitudesService _solicitudesService = SolicitudesService();
+  final ReportesService _reportesService = ReportesService();
 
-  int _currentIndex = 0; // 0: Solicitudes, 1: Usuarios
+  // Estados
   bool _isLoading = true;
-
+  int _currentIndex = 0;
   List<UsuarioModel> _usuarios = [];
   List<SolicitudRegistroModel> _solicitudes = [];
+  List<Map<String, dynamic>> _reportes = [];
 
   @override
   void initState() {
@@ -28,192 +34,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _cargarDatos() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
+
     try {
       final resultados = await Future.wait([
-        _usuariosService.obtenerUsuarios(),
-        _solicitudesService.obtenerSolicitudes(),
+        _usuariosService.obtenerUsuarios().catchError((e) {
+          debugPrint('Error en UsuariosService: $e');
+          return <UsuarioModel>[];
+        }),
+        _solicitudesService.obtenerSolicitudes().catchError((e) {
+          debugPrint('Error en SolicitudesService: $e');
+          return <SolicitudRegistroModel>[];
+        }),
+        _reportesService.obtenerReportes().catchError((e) {
+          debugPrint('Error en ReportesService: $e');
+          return <Map<String, dynamic>>[];
+        }),
       ]);
 
       if (!mounted) return;
+
       setState(() {
         _usuarios = resultados[0] as List<UsuarioModel>;
         _solicitudes = resultados[1] as List<SolicitudRegistroModel>;
+        _reportes = resultados[2] as List<Map<String, dynamic>>;
+        _isLoading = false;
       });
     } catch (e) {
+      debugPrint('Error general cargando datos del dashboard: $e');
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar información: $e'),
+            content: Text('Error al consultar PostgreSQL/Supabase: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  // ===========================================================================
-  // DIÁLOGOS DE MODERACIÓN Y CRUD DE USUARIOS
-  // ===========================================================================
-
-  void _mostrarModalCrearEditarUsuario({UsuarioModel? usuario}) {
-    final bool esEdicion = usuario != null;
-    final nombreCtrl = TextEditingController(text: esEdicion ? usuario.nombreCompleto : '');
-    final emailCtrl = TextEditingController(text: esEdicion ? usuario.email : '');
-    final telefonoCtrl = TextEditingController(text: esEdicion ? (usuario.telefono ?? '') : '');
-    String rolSeleccionado = esEdicion ? usuario.rol : 'comensal';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          esEdicion ? 'Editar Usuario' : 'Registrar Nuevo Usuario',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-        ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nombreCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre Completo',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Correo Electrónico',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: telefonoCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Teléfono',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: rolSeleccionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Rol de Sistema',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'comensal', child: Text('Comensal')),
-                    DropdownMenuItem(value: 'dueno', child: Text('Dueño de Establecimiento')),
-                    DropdownMenuItem(value: 'admin', child: Text('Administrador')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) rolSeleccionado = val;
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0EA5E9)),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              _cargarDatos();
-            },
-            child: Text(
-              esEdicion ? 'Guardar Cambios' : 'Crear Usuario',
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _mostrarModalProcesarSolicitud(SolicitudRegistroModel solicitud) {
-    final motivoCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Solicitud: ${solicitud.nombreNegocioPropuesto}'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 450),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Contacto: ${solicitud.telefonoContacto ?? "Sin teléfono"}'),
-                const SizedBox(height: 8),
-                Text('Descripción: ${solicitud.descripcionNegocio ?? "Sin descripción"}'),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: motivoCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo u Observación (Opcional)',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _solicitudesService.cambiarEstadoSolicitud(
-                solicitudId: solicitud.id,
-                nuevoEstado: 'rechazado',
-              );
-              _cargarDatos();
-            },
-            child: const Text('Rechazar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _solicitudesService.cambiarEstadoSolicitud(
-                solicitudId: solicitud.id,
-                nuevoEstado: 'aprobado',
-              );
-              _cargarDatos();
-            },
-            child: const Text('Aprobar Negocio', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // INTERFAZ PRINCIPAL
-  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -263,7 +123,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-            onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+            onPressed: () async {
+              await Supabase.instance.client.auth.signOut();
+              if (context.mounted) {
+                Navigator.pushReplacementNamed(context, '/login');
+              }
+            },
             tooltip: 'Cerrar Sesión',
           ),
           const SizedBox(width: 8),
@@ -287,9 +152,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     const SizedBox(height: 24),
                     _buildSelectorModulo(),
                     const SizedBox(height: 20),
-                    _currentIndex == 0
-                        ? (isDesktop ? _buildTablaSolicitudesWeb() : _buildListaSolicitudesMovil())
-                        : (isDesktop ? _buildTablaUsuariosWeb() : _buildListaUsuariosMovil()),
+                    if (_currentIndex == 0)
+                      isDesktop ? _buildTablaSolicitudesWeb() : _buildListaSolicitudesMovil()
+                    else if (_currentIndex == 1)
+                      _buildTarjetaReportes()
+                    else
+                      isDesktop ? _buildTablaUsuariosWeb() : _buildListaUsuariosMovil(),
                   ],
                 ),
               ),
@@ -298,12 +166,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ===========================================================================
-  // WIDGETS AUXILIARES
+  // WIDGETS AUXILIARES Y COMPONENTES VISUALES
   // ===========================================================================
 
   Widget _buildBannerAlertaSolicitudes() {
-    final pendientes = _solicitudes.where((s) => s.estadoSolicitud == 'pendiente').toList();
-
+    final pendientes = _solicitudes.where((s) => s.estadoSolicitud.toLowerCase() == 'pendiente').toList();
     if (pendientes.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -356,8 +223,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildMetricasLayout(bool isDesktop) {
-    final int pendientes = _solicitudes.where((s) => s.estadoSolicitud == 'pendiente').length;
-    final int aprobados = _solicitudes.where((s) => s.estadoSolicitud == 'aprobado').length;
+    final int pendientes = _solicitudes.where((s) => s.estadoSolicitud.toLowerCase() == 'pendiente').length;
+    final int aprobados = _solicitudes.where((s) => s.estadoSolicitud.toLowerCase() == 'aprobado').length;
 
     final cards = [
       _metricCard(
@@ -385,18 +252,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     if (isDesktop) {
       return Row(
-        children: cards.map((card) => Expanded(child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6.0),
-          child: card,
-        ))).toList(),
+        children: cards
+            .map((card) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                    child: card,
+                  ),
+                ))
+            .toList(),
       );
     }
 
     return Column(
-      children: cards.map((card) => Padding(
-        padding: const EdgeInsets.only(bottom: 12.0),
-        child: card,
-      )).toList(),
+      children: cards
+          .map((card) => Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: card,
+              ))
+          .toList(),
     );
   }
 
@@ -534,10 +407,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             _tabButton('Solicitudes de Negocio', 0, Icons.assignment_rounded),
             const SizedBox(width: 8),
-            _tabButton('Gestión de Usuarios', 1, Icons.manage_accounts_rounded),
+            _tabButton('Reportes Soporte', 1, Icons.report_problem_rounded),
+            const SizedBox(width: 8),
+            _tabButton('Gestión de Usuarios', 2, Icons.manage_accounts_rounded),
           ],
         ),
-        if (_currentIndex == 1)
+        if (_currentIndex == 2)
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0EA5E9),
@@ -592,8 +467,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- TABLAS WEB ---
+  // ===========================================================================
+  // VISTAS DE TABLAS Y LISTAS
+  // ===========================================================================
+
   Widget _buildTablaSolicitudesWeb() {
+    if (_solicitudes.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Center(
+          child: Text('No hay solicitudes registradas en PostgreSQL.', style: TextStyle(color: Color(0xFF64748B))),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -636,6 +528,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildTablaUsuariosWeb() {
+    if (_usuarios.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Center(
+          child: Text('No hay usuarios registrados en PostgreSQL.', style: TextStyle(color: Color(0xFF64748B))),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -670,21 +576,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   IconButton(
                     icon: Icon(
-                      user.estado == 'bloqueado' ? Icons.lock_open_rounded : Icons.block_rounded,
-                      color: user.estado == 'bloqueado' ? Colors.green : Colors.orange,
+                      user.estado.toLowerCase() == 'bloqueado' ? Icons.lock_open_rounded : Icons.block_rounded,
+                      color: user.estado.toLowerCase() == 'bloqueado' ? Colors.green : Colors.orange,
                     ),
                     onPressed: () async {
-                      final nuevo = user.estado == 'bloqueado' ? 'activo' : 'bloqueado';
+                      final nuevo = user.estado.toLowerCase() == 'bloqueado' ? 'activo' : 'bloqueado';
                       await _usuariosService.cambiarEstadoUsuario(user.id, nuevo);
                       _cargarDatos();
                     },
-                    tooltip: user.estado == 'bloqueado' ? 'Desbloquear' : 'Bloquear',
+                    tooltip: user.estado.toLowerCase() == 'bloqueado' ? 'Desbloquear' : 'Bloquear',
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
                     onPressed: () async {
-                      await _usuariosService.eliminarUsuario(user.id);
-                      _cargarDatos();
+                      final confirmar = await _confirmarEliminacion(context);
+                      if (confirmar == true) {
+                        await _usuariosService.eliminarUsuario(user.id);
+                        _cargarDatos();
+                      }
                     },
                     tooltip: 'Eliminar',
                   ),
@@ -697,7 +606,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- LISTAS MÓVILES ---
   Widget _buildListaSolicitudesMovil() {
     if (_solicitudes.isEmpty) {
       return const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('No hay solicitudes registradas.')));
@@ -781,15 +689,81 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- BADGES VISUALES ---
+  Widget _buildTarjetaReportes() {
+    if (_reportes.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [BoxShadow(color: Colors.black.withAlpha(8), blurRadius: 10)],
+        ),
+        child: const Column(
+          children: [
+            Icon(Icons.mark_email_read_rounded, size: 48, color: Color(0xFF0EA5E9)),
+            SizedBox(height: 12),
+            Text(
+              'No hay reportes o incidencias registradas',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Todos los tickets e incidencias enviadas por usuarios aparecerán en esta vista.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _reportes.length,
+      itemBuilder: (context, index) {
+        final rep = _reportes[index];
+        final usuarioData = rep['usuarios_r_sabor'] as Map<String, dynamic>? ?? rep['usuarios'] as Map<String, dynamic>?;
+
+        return Card(
+          elevation: 0,
+          color: Colors.white,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: const Color(0xFF0EA5E9).withAlpha(30),
+              child: const Icon(Icons.report_problem_rounded, color: Color(0xFF0EA5E9)),
+            ),
+            title: Text(
+              usuarioData?['nombre_completo'] ?? usuarioData?['nombre'] ?? 'Comensal Anónimo',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(rep['descripcion'] ?? 'Sin descripción proporcionada'),
+            trailing: _badgeEstado(rep['estado_reporte'] ?? rep['estado'] ?? 'pendiente'),
+          ),
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
+  // BADGES Y COMPONENTES
+  // ===========================================================================
+
   Widget _badgeEstado(String estado) {
+    final est = estado.toLowerCase();
     Color bg = const Color(0xFFFEF3C7);
     Color txt = const Color(0xFFD97706);
 
-    if (estado == 'aprobado' || estado == 'activo') {
+    if (est == 'aprobado' || est == 'activo') {
       bg = const Color(0xFFD1FAE5);
       txt = const Color(0xFF059669);
-    } else if (estado == 'rechazado' || estado == 'bloqueado') {
+    } else if (est == 'rechazado' || est == 'bloqueado') {
       bg = const Color(0xFFFEE2E2);
       txt = const Color(0xFFDC2626);
     }
@@ -815,6 +789,181 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         rol.toUpperCase(),
         style: const TextStyle(color: Color(0xFF475569), fontSize: 10, fontWeight: FontWeight.bold),
       ),
+    );
+  }
+
+  // ===========================================================================
+  // MODALES TOTALMENTE IMPLEMENTADOS Y FUNCIONALES
+  // ===========================================================================
+
+  Future<bool?> _confirmarEliminacion(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar eliminación'),
+        content: const Text('¿Estás seguro de que deseas eliminar este registro de la base de datos?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarModalCrearEditarUsuario({UsuarioModel? usuario}) {
+    final nombreCtrl = TextEditingController(text: usuario?.nombreCompleto ?? '');
+    final emailCtrl = TextEditingController(text: usuario?.email ?? '');
+    final telefonoCtrl = TextEditingController(text: usuario?.telefono ?? '');
+    String rolSeleccionado = usuario?.rol ?? 'comensal';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(usuario == null ? 'Crear Nuevo Usuario' : 'Editar Usuario'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nombreCtrl,
+                      decoration: const InputDecoration(labelText: 'Nombre Completo'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: emailCtrl,
+                      enabled: usuario == null,
+                      decoration: const InputDecoration(labelText: 'Correo Electrónico'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: telefonoCtrl,
+                      decoration: const InputDecoration(labelText: 'Teléfono'),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: rolSeleccionado,
+                      decoration: const InputDecoration(labelText: 'Rol'),
+                      items: const [
+                        DropdownMenuItem(value: 'comensal', child: Text('Comensal')),
+                        DropdownMenuItem(value: 'propietario', child: Text('Propietario')),
+                        DropdownMenuItem(value: 'admin', child: Text('Administrador')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setModalState(() => rolSeleccionado = val);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0EA5E9)),
+                  onPressed: () async {
+                    if (usuario == null) {
+                      await _usuariosService.crearUsuario(
+                        nombre: nombreCtrl.text,
+                        email: emailCtrl.text,
+                        telefono: telefonoCtrl.text,
+                        rol: rolSeleccionado,
+                      );
+                    } else {
+                      await _usuariosService.actualizarUsuario(
+                        id: usuario.id,
+                        nombre: nombreCtrl.text,
+                        telefono: telefonoCtrl.text,
+                        rol: rolSeleccionado,
+                      );
+                    }
+                    if (mounted) Navigator.pop(context);
+                    _cargarDatos();
+                  },
+                  child: const Text('Guardar', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _mostrarModalProcesarSolicitud(SolicitudRegistroModel solicitud) {
+    final motivoController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Solicitud: ${solicitud.nombreNegocioPropuesto}'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Teléfono: ${solicitud.telefonoContacto ?? "Sin registro"}'),
+                const SizedBox(height: 8),
+                Text('Estado actual: ${solicitud.estadoSolicitud}'),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo (en caso de rechazo)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () async {
+                await _solicitudesService.cambiarEstadoSolicitud(
+                  solicitudId: solicitud.id,
+                  nuevoEstado: 'rechazado',
+                  motivoRechazo: motivoController.text,
+                );
+                if (mounted) Navigator.pop(context);
+                _cargarDatos();
+              },
+              child: const Text('Rechazar', style: TextStyle(color: Colors.white)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+              onPressed: () async {
+                await _solicitudesService.cambiarEstadoSolicitud(
+                  solicitudId: solicitud.id,
+                  nuevoEstado: 'aprobado',
+                );
+                if (mounted) Navigator.pop(context);
+                _cargarDatos();
+              },
+              child: const Text('Aprobar', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

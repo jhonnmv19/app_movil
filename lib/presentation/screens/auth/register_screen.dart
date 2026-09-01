@@ -303,7 +303,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF2EE),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.3)),
+                    border: Border.all(color: const Color(0xFFD64E28).withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
@@ -452,7 +452,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF2EE),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.5)),
+                          border: Border.all(color: const Color(0xFFD64E28).withValues(alpha: 0.5)),
                         ),
                         child: Column(
                           children: [
@@ -518,7 +518,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFFFFF2EE),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.5)),
+                            border: Border.all(color: const Color(0xFFD64E28).withValues(alpha: 0.5)),
                           ),
                           child: Row(
                             children: [
@@ -553,7 +553,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFFFFF2EE),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFD64E28).withOpacity(0.5)),
+                            border: Border.all(color: const Color(0xFFD64E28).withValues(alpha: 0.5)),
                           ),
                           child: Row(
                             children: [

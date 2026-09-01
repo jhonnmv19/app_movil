@@ -254,7 +254,7 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
                 )
               : Switch.adaptive(
                   value: _estaAbierto,
-                  activeColor: Colors.green,
+                  activeTrackColor: Colors.green,
                   onChanged: _establecimiento == null
                       ? null
                       : _toggleEstadoLocal,
@@ -360,7 +360,7 @@ class _StatCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: color.withOpacity(0.1),
+                backgroundColor: color.withValues(alpha: 0.1),
                 child: Icon(icon, color: color, size: 20),
               ),
               const SizedBox(height: 12),

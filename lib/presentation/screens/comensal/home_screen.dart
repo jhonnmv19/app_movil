@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/services/establecimiento_service.dart';
+import '../../../data/services/favoritos_service.dart';
+import '../../../data/services/session_service.dart';
 import '../../../data/models/usuario_model.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -13,20 +15,22 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final EstablecimientoService _service = EstablecimientoService();
+  final FavoritosService _favoritosService = FavoritosService();
+  final SessionService _sessionService = SessionService();
   Timer? _debounceTimer;
 
   UsuarioModel? _usuario;
   List<Map<String, dynamic>> _platillos = [];
-  Set<int> _favoritosIds = {};
+  Set<String> _platillosFavoritosIds = {};
+
   bool _isLoading = true;
-  
+  bool _isFetchingPlatillos = false;
+
   String _searchQuery = '';
   String _categoriaSeleccionada = 'Todos';
   double _precioMaximo = 100.0;
 
-  final List<String> _categorias = [
-    'Todos', 'Sopas', 'Segundos', 'Pique', 'Chicharrón', 'Postres'
-  ];
+  List<String> _categorias = ['Todos'];
 
   @override
   void initState() {
@@ -40,36 +44,104 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // Helper seguro para extraer el ID
+  dynamic _obtenerIdUnico(dynamic value) {
+    if (value == null) return null;
+    return value.toString();
+  }
+
+  // Helper seguro para parsear Precios
+  double _parsePrecio(Map<String, dynamic> item) {
+    final rawValue = item['precio_bs'] ??
+        item['precio'] ??
+        item['precio_plato'] ??
+        item['precio_unidad'] ??
+        item['costo'];
+
+    if (rawValue is num) return rawValue.toDouble();
+    if (rawValue is String) return double.tryParse(rawValue) ?? 0.0;
+    return 0.0;
+  }
+
   Future<void> _cargarDatosIniciales() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
-    final user = await _service.obtenerPerfilUsuarioActual();
-    
-    if (user != null) {
-      final favs = await _service.obtenerIdsFavoritos(user.id);
-      _favoritosIds = favs.toSet();
-    }
 
-    await _fetchPlatillos();
+    try {
+      // 1. Obtención de usuario desde SessionService con fallback al servicio
+      UsuarioModel? user = _sessionService.usuarioActual;
+      user ??= await _service.obtenerPerfilUsuarioActual();
 
-    if (mounted) {
-      setState(() {
-        _usuario = user;
-        _isLoading = false;
-      });
+      // 2. Si se recuperó sesión, guardar en el Singleton
+      if (user != null) {
+        _sessionService.iniciarSesion(user);
+        final favs = await _favoritosService.obtenerIdsPlatillosFavoritos(user.id);
+        _platillosFavoritosIds = favs.map((e) => e.toString()).toSet();
+      } else {
+        // Garantizar limpieza si no hay usuario activo
+        _platillosFavoritosIds.clear();
+      }
+
+      // 3. Cargar platillos iniciales
+      final platillosData = await _service.obtenerPlatosPopulares(
+        query: _searchQuery,
+        categoria: _categoriaSeleccionada,
+        precioMaximo: _precioMaximo,
+      );
+
+      // 4. Cargar categorías dinámicas
+      try {
+        final dynamic categoriasBDRaw = await _service.obtenerCategorias();
+        if (categoriasBDRaw is List && categoriasBDRaw.isNotEmpty) {
+          final List<String> categoriasParseadas = categoriasBDRaw.map((e) {
+            if (e is Map) {
+              return e['nombre']?.toString() ?? e.values.first.toString();
+            }
+            return e.toString();
+          }).where((nombre) => nombre.isNotEmpty).toList();
+
+          _categorias = ['Todos', ...categoriasParseadas];
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        setState(() {
+          _usuario = user;
+          _platillos = platillosData;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al cargar la información inicial')),
+        );
+      }
     }
   }
 
   Future<void> _fetchPlatillos() async {
-    final platillosData = await _service.obtenerPlatosPopulares(
-      query: _searchQuery,
-      categoria: _categoriaSeleccionada,
-      precioMaximo: _precioMaximo,
-    );
+    if (!mounted) return;
+    setState(() => _isFetchingPlatillos = true);
 
-    if (mounted) {
-      setState(() {
-        _platillos = platillosData;
-      });
+    try {
+      final platillosData = await _service.obtenerPlatosPopulares(
+        query: _searchQuery,
+        categoria: _categoriaSeleccionada,
+        precioMaximo: _precioMaximo,
+      );
+
+      if (mounted) {
+        setState(() {
+          _platillos = platillosData;
+          _isFetchingPlatillos = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isFetchingPlatillos = false);
+      }
     }
   }
 
@@ -82,23 +154,136 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onCategoriaSelected(String categoria) {
+    if (_categoriaSeleccionada == categoria) return;
     setState(() => _categoriaSeleccionada = categoria);
     _fetchPlatillos();
   }
 
-  void _toggleFav(int establecimientoId) async {
-    if (_usuario == null || establecimientoId == 0) return;
-    final esFav = _favoritosIds.contains(establecimientoId);
+  void _toggleFav(dynamic rawPlatilloId) async {
+    // 1. Obtener y parsear el ID a int para coincidir con la BD
+    final String? platilloIdStr = _obtenerIdUnico(rawPlatilloId);
+    final int? platilloIdInt = platilloIdStr != null ? int.tryParse(platilloIdStr) : null;
 
+    // 2. Guard de Sesión e ID válido
+    final usuarioActual = _usuario ?? _sessionService.usuarioActual;
+
+    if (usuarioActual == null || platilloIdInt == null) {
+      // Limpieza preventiva si se detecta falta de sesión
+      if (_usuario != null || _platillosFavoritosIds.isNotEmpty) {
+        setState(() {
+          _usuario = null;
+          _platillosFavoritosIds.clear();
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Debes iniciar sesión para guardar favoritos.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 3. Determinar el estado actual usando la representación en String para el Set local
+    final String idClave = platilloIdInt.toString();
+    final bool esFav = _platillosFavoritosIds.contains(idClave);
+
+    // 4. Actualización optimista de la UI
     setState(() {
       if (esFav) {
-        _favoritosIds.remove(establecimientoId);
+        _platillosFavoritosIds.remove(idClave);
       } else {
-        _favoritosIds.add(establecimientoId);
+        _platillosFavoritosIds.add(idClave);
       }
     });
 
-    await _service.toggleFavorito(_usuario!.id, establecimientoId, !esFav);
+    // 5. Llamada al servicio con int explícito
+    final exito = await _favoritosService.toggleFavoritoPlatillo(
+      comensalId: usuarioActual.id,
+      platilloId: platilloIdInt,
+      esFavorito: esFav,
+    );
+
+    // 6. Revertir cambio en caso de falla en backend
+    if (!exito && mounted) {
+      setState(() {
+        if (esFav) {
+          _platillosFavoritosIds.add(idClave);
+        } else {
+          _platillosFavoritosIds.remove(idClave);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar tus favoritos.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _mostrarModalFiltros(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalContext) {
+        double tempPrecio = _precioMaximo;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Filtrar Resultados',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Precio Máximo: Bs. ${tempPrecio.toStringAsFixed(0)}'),
+                  Slider(
+                    value: tempPrecio,
+                    min: 10.0,
+                    max: 200.0,
+                    divisions: 19,
+                    activeColor: AppTheme.primaryOrange,
+                    onChanged: (val) {
+                      setModalState(() => tempPrecio = val);
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryOrange,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _precioMaximo = tempPrecio;
+                        });
+                        Navigator.pop(modalContext);
+                        _fetchPlatillos();
+                      },
+                      child: const Text('Aplicar Filtros', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  )
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -112,18 +297,16 @@ class _HomeScreenState extends State<HomeScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // Header con saludo y Avatar estilizado
+              // Header
               SliverToBoxAdapter(
                 child: Container(
                   padding: const EdgeInsets.all(20.0),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: const BorderRadius.vertical(
-                      bottom: Radius.circular(24),
-                    ),
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -132,27 +315,31 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '¡Hola, ${_usuario?.nombreCompleto.split(" ").first ?? "Comensal"}! 👋',
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '¡Hola, ${_usuario?.nombreCompleto.isNotEmpty == true ? _usuario!.nombreCompleto.split(" ").first : "Comensal"}! 👋',
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '¿Qué vas a comer hoy en Cochabamba?',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey[600],
+                            const SizedBox(height: 4),
+                            Text(
+                              '¿Qué vas a comer hoy en Cochabamba?',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       CircleAvatar(
                         radius: 26,
-                        backgroundColor: AppTheme.primaryOrange.withOpacity(0.15),
+                        backgroundColor: AppTheme.primaryOrange.withValues(alpha: 0.15),
                         child: Text(
                           _usuario?.nombreCompleto.isNotEmpty == true
                               ? _usuario!.nombreCompleto[0].toUpperCase()
@@ -169,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Buscador y Filtro Modal
+              // Buscador y Botón de Filtro
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -214,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Barra de Categorías en Chips
+              // Categorías
               SliverToBoxAdapter(
                 child: SizedBox(
                   height: 52,
@@ -250,257 +437,180 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Título de Sección
+              // Encabezado
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12),
                   child: Text(
                     'Platos Destacados',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ),
               ),
 
-              // Lista de Platos o Indicador de Carga
-              _isLoading
-                  ? const SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(40),
-                          child: CircularProgressIndicator(color: AppTheme.primaryOrange),
+              // Lista de Platillos
+              if (_isLoading || _isFetchingPlatillos)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(40.0),
+                    child: Center(
+                      child: CircularProgressIndicator(color: AppTheme.primaryOrange),
+                    ),
+                  ),
+                )
+              else if (_platillos.isEmpty)
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.search_off_rounded, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Sin resultados',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
-                      ),
-                    )
-                  : _platillos.isEmpty
-                      ? SliverToBoxAdapter(
-                          child: Container(
-                            margin: const EdgeInsets.all(20),
-                            padding: const EdgeInsets.all(32),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'No encontramos platillos con los criterios aplicados.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final item = _platillos[index];
+
+                      final dynamic rawId = item['id'] ?? item['platillo_id'];
+                      final String? platilloIdStr = _obtenerIdUnico(rawId);
+                      final double precio = _parsePrecio(item);
+                      final bool esFavorito = platilloIdStr != null && _platillosFavoritosIds.contains(platilloIdStr);
+
+                      final est = item['establecimientos_r_sabor'] as Map<String, dynamic>?;
+                      final double calificacion = est != null ? _parsePrecio(est) : 5.0;
+
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Card(
+                          elevation: 1.5,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () {
+                              if (est != null) {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/mapa',
+                                  arguments: {
+                                    'establecimientoId': est['id'],
+                                    'latitud': est['latitud'],
+                                    'longitud': est['longitud'],
+                                    'nombre': est['nombre_comercial'],
+                                  },
+                                );
+                              }
+                            },
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.search_off_rounded, size: 48, color: Colors.grey[400]),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Sin resultados',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                Stack(
+                                  children: [
+                                    AspectRatio(
+                                      aspectRatio: 16 / 9,
+                                      child: Image.network(
+                                        item['imagen_url'] ?? item['url_imagen'] ?? '',
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => Container(
+                                          color: Colors.grey[200],
+                                          child: const Icon(Icons.fastfood, size: 48, color: Colors.grey),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 10,
+                                      right: 10,
+                                      child: Material(
+                                        color: Colors.white.withValues(alpha: 0.9),
+                                        shape: const CircleBorder(),
+                                        elevation: 2,
+                                        child: IconButton(
+                                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                          icon: Icon(
+                                            esFavorito ? Icons.favorite : Icons.favorite_border,
+                                            color: esFavorito ? Colors.red : Colors.grey[700],
+                                            size: 22,
+                                          ),
+                                          onPressed: () => _toggleFav(rawId),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'No encontramos platillos con los criterios aplicados.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.grey[600]),
+                                Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['nombre'] ?? item['nombre_plato'] ?? 'Platillo',
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Bs. ${precio.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              color: AppTheme.primaryOrange,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.star, color: Colors.amber, size: 18),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                calificacion.toStringAsFixed(1),
+                                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                              ),
+                                            ],
+                                          )
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                        )
-                      : SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final item = _platillos[index];
-                              final est = item['establecimientos_r_sabor'];
-                              final int estId = est?['id'] ?? 0;
-                              final bool esFavorito = _favoritosIds.contains(estId);
-
-                              return Card(
-                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                elevation: 1.5,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                clipBehavior: Clip.antiAlias,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Stack(
-                                      children: [
-                                        Image.network(
-                                          item['imagen_url'] ?? '',
-                                          height: 170,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Container(
-                                            height: 170,
-                                            color: Colors.orange.shade50,
-                                            child: const Center(
-                                              child: Icon(Icons.restaurant, size: 50, color: AppTheme.primaryOrange),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 10,
-                                          right: 10,
-                                          child: Material(
-                                            color: Colors.white,
-                                            shape: const CircleBorder(),
-                                            elevation: 2,
-                                            child: IconButton(
-                                              constraints: const BoxConstraints(),
-                                              icon: Icon(
-                                                esFavorito ? Icons.favorite : Icons.favorite_border,
-                                                color: esFavorito ? Colors.red : Colors.grey[600],
-                                                size: 20,
-                                              ),
-                                              onPressed: () => _toggleFav(estId),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          bottom: 10,
-                                          left: 10,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withOpacity(0.75),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              'Bs. ${(item['precio_bs'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
-                                              style: const TextStyle(
-                                                color: Colors.white, 
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      ],
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(14.0),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  item['nombre'] ?? 'Platillo Sin Nombre',
-                                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                              Row(
-                                                children: [
-                                                  const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
-                                                  Text(
-                                                    ' ${(est?['calificacion_promedio'] ?? 5.0)}',
-                                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                                  ),
-                                                ],
-                                              )
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              const Icon(Icons.location_on_outlined, size: 16, color: Colors.grey),
-                                              const SizedBox(width: 4),
-                                              Expanded(
-                                                child: Text(
-                                                  '${est?['nombre_comercial'] ?? 'Local'} • ${est?['direccion_texto'] ?? 'Cochabamba'}',
-                                                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  ],
-                                ),
-                              );
-                            },
-                            childCount: _platillos.length,
-                          ),
                         ),
+                      );
+                    },
+                    childCount: _platillos.length,
+                  ),
+                ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  void _mostrarModalFiltros(BuildContext context) {
-    double tempPrecio = _precioMaximo;
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (modalContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Filtrar por Precio', 
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Precio Máximo:', style: TextStyle(fontWeight: FontWeight.w500)),
-                      Text(
-                        'Bs. ${tempPrecio.toStringAsFixed(0)}',
-                        style: const TextStyle(color: AppTheme.primaryOrange, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: tempPrecio,
-                    min: 5,
-                    max: 150,
-                    divisions: 29,
-                    activeColor: AppTheme.primaryOrange,
-                    onChanged: (val) {
-                      setModalState(() => tempPrecio = val);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryOrange,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () {
-                        setState(() => _precioMaximo = tempPrecio);
-                        _fetchPlatillos();
-                        Navigator.pop(modalContext);
-                      },
-                      child: const Text(
-                        'Aplicar Filtro', 
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ),
-                  )
-                ],
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }

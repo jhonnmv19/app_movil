@@ -44,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       // Imprimir respuesta en consola para depuración
-      print('--> RESPUESTA SUPABASE USUARIO: $response');
+      debugPrint('--> RESPUESTA SUPABASE USUARIO: $response');
 
       if (response == null) {
         _mostrarSnackBar('El correo electrónico no está registrado', Colors.redAccent);
@@ -72,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // 5. Redirección según Rol
       final String rol = response['rol']?.toString().toLowerCase() ?? 'comensal';
-      print('--> ROL DETECTADO: $rol');
+      debugPrint('--> ROL DETECTADO: $rol');
 
       switch (rol) {
         case 'admin':
@@ -89,8 +89,8 @@ class _LoginScreenState extends State<LoginScreen> {
           break;
       }
     } catch (e, stackTrace) {
-      print('--> ERROR EN LOGIN: $e');
-      print('--> STACKTRACE: $stackTrace');
+      debugPrint('--> ERROR EN LOGIN: $e');
+      debugPrint('--> STACKTRACE: $stackTrace');
       if (!mounted) return;
       _mostrarSnackBar('Error inesperado al iniciar sesión: $e', Colors.redAccent);
     } finally {
