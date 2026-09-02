@@ -66,4 +66,52 @@ class EstablecimientoModel {
       'verificado': verificado,
     };
   }
+
+  // Método de conveniencia para inserciones (omite el id autonumérico)
+  Map<String, dynamic> toInsertJson() {
+    return {
+      'dueno_id': duenoId,
+      'categoria_id': categoriaId,
+      'nombre_comercial': nombreComercial,
+      'descripcion': descripcion,
+      'direccion_texto': direccionTexto,
+      'latitud': latitud,
+      'longitud': longitud,
+      'imagen_portada': imagenPortada,
+      'calificacion_promedio': calificacionPromedio,
+      'estado_local': estadoLocal,
+      'verificado': verificado,
+    };
+  }
+
+  // Permite actualizar estados o datos sin reconstruir toda la instancia manualmente
+  EstablecimientoModel copyWith({
+    int? id,
+    int? duenoId,
+    int? categoriaId,
+    String? nombreComercial,
+    String? descripcion,
+    String? direccionTexto,
+    double? latitud,
+    double? longitud,
+    String? imagenPortada,
+    double? calificacionPromedio,
+    String? estadoLocal,
+    bool? verificado,
+  }) {
+    return EstablecimientoModel(
+      id: id ?? this.id,
+      duenoId: duenoId ?? this.duenoId,
+      categoriaId: categoriaId ?? this.categoriaId,
+      nombreComercial: nombreComercial ?? this.nombreComercial,
+      descripcion: descripcion ?? this.descripcion,
+      direccionTexto: direccionTexto ?? this.direccionTexto,
+      latitud: latitud ?? this.latitud,
+      longitud: longitud ?? this.longitud,
+      imagenPortada: imagenPortada ?? this.imagenPortada,
+      calificacionPromedio: calificacionPromedio ?? this.calificacionPromedio,
+      estadoLocal: estadoLocal ?? this.estadoLocal,
+      verificado: verificado ?? this.verificado,
+    );
+  }
 }

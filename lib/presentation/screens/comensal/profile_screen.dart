@@ -139,123 +139,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _mostrarModalFavoritos(BuildContext context, int usuarioId) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (modalContext) {
-        return Container(
-          height: MediaQuery.of(modalContext).size.height * 0.7,
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Mis Favoritos Guardados',
-                style: Theme.of(modalContext).textTheme.titleLarge,
-              ),
-              const Divider(),
-              Expanded(
-                child: FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _favoritosService.obtenerFavoritos(usuarioId),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+ void _mostrarModalFavoritos(BuildContext context, int usuarioId) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (modalContext) {
+      return Container(
+        height: MediaQuery.of(modalContext).size.height * 0.7,
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Mis Favoritos Guardados',
+              style: Theme.of(modalContext).textTheme.titleLarge,
+            ),
+            const Divider(),
+            Expanded(
+              // CORRECCIÓN 1: Se usa obtenerFavoritosRaw tal cual está en tu service
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _favoritosService.obtenerFavoritosRaw(usuarioId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                    if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(
-                        child: Text('No tienes elementos guardados en favoritos.'),
-                      );
-                    }
+                  if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                    return const Center(
+                      child: Text('No tienes elementos guardados en favoritos.'),
+                    );
+                  }
 
-                    List<Map<String, dynamic>> favoritos = snapshot.data!;
+                  List<Map<String, dynamic>> favoritos = snapshot.data!;
 
-                    return StatefulBuilder(
-                      builder: (context, setModalState) {
-                        if (favoritos.isEmpty) {
-                          return const Center(
-                            child: Text('No tienes elementos guardados en favoritos.'),
-                          );
-                        }
+                  return StatefulBuilder(
+                    builder: (context, setModalState) {
+                      if (favoritos.isEmpty) {
+                        return const Center(
+                          child: Text('No tienes elementos guardados en favoritos.'),
+                        );
+                      }
 
-                        return ListView.builder(
-                          itemCount: favoritos.length,
-                          itemBuilder: (context, index) {
-                            final item = favoritos[index];
-                            final bool esEstablecimiento = item['establecimientos_r_sabor'] != null;
-                            final data = esEstablecimiento
-                                ? item['establecimientos_r_sabor']
-                                : item['platillos_r_sabor'];
+                      return ListView.builder(
+                        itemCount: favoritos.length,
+                        itemBuilder: (context, index) {
+                          final item = favoritos[index];
+                          final bool esEstablecimiento = item['establecimientos_r_sabor'] != null;
+                          final data = esEstablecimiento
+                              ? item['establecimientos_r_sabor']
+                              : item['platillos_r_sabor'];
 
-                            if (data == null) return const SizedBox.shrink();
+                          if (data == null) return const SizedBox.shrink();
 
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 6.0),
-                              child: ListTile(
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                  child: Image.network(
-                                    esEstablecimiento
-                                        ? (data['imagen_portada'] ?? '')
-                                        : (data['imagen_url'] ?? ''),
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        const Icon(Icons.restaurant),
-                                  ),
-                                ),
-                                title: Text(
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 6.0),
+                            child: ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8.0),
+                                child: Image.network(
                                   esEstablecimiento
-                                      ? (data['nombre_comercial'] ?? '')
-                                      : (data['nombre'] ?? ''),
-                                ),
-                                subtitle: Text(
-                                  esEstablecimiento
-                                      ? (data['descripcion'] ?? 'Establecimiento')
-                                      : 'Precio: Bs. ${data['precio_bs']}',
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                  onPressed: () async {
-                                    final bool exito;
-                                    if (esEstablecimiento) {
-                                      // Si implementas borrado de establecimiento a futuro
-                                      exito = false; 
-                                    } else {
-                                      exito = await _favoritosService.toggleFavoritoPlatillo(
-                                        comensalId: usuarioId,
-                                        platilloId: data['id'],
-                                        esFavorito: true, // Pasa true para que ejecute el DELETE en Supabase
-                                      );
-                                    }
-
-                                    if (exito) {
-                                      setModalState(() {
-                                        favoritos.removeAt(index);
-                                      });
-                                    }
-                                  },
+                                      ? (data['imagen_portada'] ?? '')
+                                      : (data['imagen_url'] ?? ''),
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.restaurant),
                                 ),
                               ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
+                              title: Text(
+                                esEstablecimiento
+                                    ? (data['nombre_comercial'] ?? '')
+                                    : (data['nombre'] ?? ''),
+                              ),
+                              subtitle: Text(
+                                esEstablecimiento
+                                    ? (data['descripcion'] ?? 'Establecimiento')
+                                    : 'Precio: Bs. ${data['precio_bs']}',
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                onPressed: () async {
+                                  final bool exito;
+                                  
+                                  // CORRECCIÓN 2: Lógica completa para eliminar tanto establecimientos como platillos
+                                  if (esEstablecimiento) {
+                                    exito = await _favoritosService.toggleFavoritoEstablecimiento(
+                                      comensalId: usuarioId,
+                                      establecimientoId: data['id'],
+                                      esFavoritoActualmente: true,
+                                    );
+                                  } else {
+                                    exito = await _favoritosService.toggleFavoritoPlatillo(
+                                      comensalId: usuarioId,
+                                      platilloId: data['id'],
+                                      esFavoritoActualmente: true, // Parámetro exacto que exige tu service
+                                    );
+                                  }
+
+                                  if (exito) {
+                                    setModalState(() {
+                                      favoritos.removeAt(index);
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
               ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   void _dialogoEditarPerfil(BuildContext context) {
     final controllerNombre = TextEditingController(text: _usuario?.nombreCompleto);

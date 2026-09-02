@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -28,18 +27,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _direccionNegocioController = TextEditingController();
   final _descripcionNegocioController = TextEditingController();
 
-  // Variables para GPS (Reemplazan la entrada manual de texto)
+  // Variables GPS
   double? _latitudSeleccionada;
   double? _longitudSeleccionada;
   bool _obteniendoUbicacion = false;
 
-  // Adaptación al CHECK de la BD SQL: 'dueno' en lugar de 'dueño'
+  // Rol predeterminado (Coincide con CHECK de BD)
   String _rolSeleccionado = 'comensal';
 
-  // Archivos locales seleccionados
-  File? _archivoDocumento;
-  File? _archivoFotoLocal;
-
+  // Archivos locales (Usamos PlatformFile para compatibilidad Web y Móvil)
+  PlatformFile? _archivoDocumento;
+  PlatformFile? _archivoFotoLocal;
   String? _nombreDocSeleccionado;
   String? _nombreFotoSeleccionada;
 
@@ -57,13 +55,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // Método para obtener la posición GPS actual con Geolocator
+  // Captura segura de posición GPS
   Future<void> _obtenerUbicacionGPS() async {
     setState(() => _obteniendoUbicacion = true);
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!mounted) return;
         _mostrarSnackBar('El GPS está desactivado. Por favor, actívalo.', Colors.deepOrange);
         return;
       }
@@ -72,81 +71,116 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           _mostrarSnackBar('Permisos de ubicación denegados.', Colors.redAccent);
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
         _mostrarSnackBar('Los permisos de ubicación están denegados permanentemente.', Colors.redAccent);
         return;
       }
 
       final Position position = await Geolocator.getCurrentPosition(
-  desiredAccuracy: LocationAccuracy.high,
-);
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15),
+      );
 
+      if (!mounted) return;
       setState(() {
         _latitudSeleccionada = position.latitude;
         _longitudSeleccionada = position.longitude;
       });
 
-      _mostrarSnackBar('Ubicación obtenida correctamente.', Colors.green);
+      _mostrarSnackBar('Ubicación capturada exitosamente.', Colors.green);
     } catch (e) {
+      if (!mounted) return;
       _mostrarSnackBar('Error al obtener ubicación: $e', Colors.redAccent);
     } finally {
       if (mounted) setState(() => _obteniendoUbicacion = false);
     }
   }
 
+  // Selección de documento (Soporta Web gracias a withData: true)
   Future<void> _seleccionarDocumento() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg'],
+      withData: true,
     );
 
-    if (result != null && result.files.single.path != null) {
+    if (result != null && result.files.isNotEmpty) {
+      final file = result.files.single;
       setState(() {
-        _archivoDocumento = File(result.files.single.path!);
-        _nombreDocSeleccionado = result.files.single.name;
+        _archivoDocumento = file;
+        _nombreDocSeleccionado = file.name;
       });
     }
   }
 
+  // Selección de foto (Soporta Web gracias a withData: true)
   Future<void> _seleccionarFotoLocal() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
+      withData: true,
     );
 
-    if (result != null && result.files.single.path != null) {
+    if (result != null && result.files.isNotEmpty) {
+      final file = result.files.single;
       setState(() {
-        _archivoFotoLocal = File(result.files.single.path!);
-        _nombreFotoSeleccionada = result.files.single.name;
+        _archivoFotoLocal = file;
+        _nombreFotoSeleccionada = file.name;
       });
     }
   }
 
+  // Subida universal de archivos usando bytes (Compatible con Web y Móvil)
   Future<String?> _subirArchivoASupabase({
-    required File archivo,
+    required PlatformFile archivo,
     required String bucketName,
     required String rutaDestino,
   }) async {
     try {
       final supabase = Supabase.instance.client;
-      await supabase.storage.from(bucketName).upload(
+
+      if (archivo.bytes == null) {
+        debugPrint('--> ERROR: Los bytes del archivo están vacíos.');
+        return null;
+      }
+
+      await supabase.storage.from(bucketName).uploadBinary(
             rutaDestino,
-            archivo,
-            fileOptions: const FileOptions(upsert: true),
+            archivo.bytes!,
+            fileOptions: FileOptions(
+              upsert: true,
+              contentType: _obtenerContentType(archivo.extension),
+            ),
           );
 
-      final urlPublica = supabase.storage.from(bucketName).getPublicUrl(rutaDestino);
-      return urlPublica;
+      return supabase.storage.from(bucketName).getPublicUrl(rutaDestino);
     } catch (e) {
-      debugPrint('--> ERROR SUBIENDO ARCHIVO A STORAGE: $e');
+      debugPrint('--> ERROR AL SUBIR ARCHIVO A SUPABASE STORAGE: $e');
       return null;
     }
   }
 
+  String _obtenerContentType(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  // Registro principal atómico
   Future<void> _registrarse() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -156,22 +190,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
       if (_archivoFotoLocal == null) {
-        _mostrarSnackBar('Adjunta una foto de la fachada o local.', Colors.redAccent);
+        _mostrarSnackBar('Adjunta una foto de la fachada de tu local.', Colors.redAccent);
         return;
       }
       if (_latitudSeleccionada == null || _longitudSeleccionada == null) {
-        _mostrarSnackBar('Captura la ubicación GPS de tu establecimiento.', Colors.redAccent);
+        _mostrarSnackBar('Obtén la ubicación GPS de tu establecimiento.', Colors.redAccent);
         return;
       }
     }
 
     setState(() => _isLoading = true);
+    int? usuarioIdCreado;
 
     try {
       final supabase = Supabase.instance.client;
       final emailClean = _emailController.text.trim().toLowerCase();
 
-      // 1. Insertar en usuarios_r_sabor ('dueno' coincide con el CHECK de la BD)
+      // 1. Inserción del Usuario
       final userResponse = await supabase
           .from('usuarios_r_sabor')
           .insert({
@@ -186,59 +221,70 @@ class _RegisterScreenState extends State<RegisterScreen> {
           .single();
 
       final usuarioCreado = UsuarioModel.fromJson(Map<String, dynamic>.from(userResponse));
-      final int usuarioId = usuarioCreado.id;
+      usuarioIdCreado = usuarioCreado.id;
 
-      // 2. Procesar solicitud si se registra como dueño de negocio
+      // 2. Procesamiento de Solicitud de Negocio para Dueño
       if (_rolSeleccionado == 'dueno') {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final extDoc = _archivoDocumento!.extension ?? 'pdf';
+        final extFoto = _archivoFotoLocal!.extension ?? 'jpg';
 
-        final pathDoc = 'documentos/ci_nit_${usuarioId}_$timestamp.${_archivoDocumento!.path.split('.').last}';
+        final pathDoc = 'documentos/ci_nit_${usuarioIdCreado}_$timestamp.$extDoc';
         final docUrl = await _subirArchivoASupabase(
           archivo: _archivoDocumento!,
           bucketName: 'solicitudes_documentos',
           rutaDestino: pathDoc,
         );
 
-        final pathFoto = 'locales/foto_${usuarioId}_$timestamp.${_archivoFotoLocal!.path.split('.').last}';
+        final pathFoto = 'locales/foto_${usuarioIdCreado}_$timestamp.$extFoto';
         final fotoUrl = await _subirArchivoASupabase(
           archivo: _archivoFotoLocal!,
           bucketName: 'solicitudes_documentos',
           rutaDestino: pathFoto,
         );
 
+        if (docUrl == null || fotoUrl == null) {
+          throw Exception('No se pudieron subir los archivos adjuntos. Inténtalo de nuevo.');
+        }
+
         await supabase.from('solicitudes_registro_r_sabor').insert({
-          'usuario_id': usuarioId,
-          'nombre_negocio_propuesto': _nombreNegocioController.text.trim(),
-          'descripcion_negocio': _descripcionNegocioController.text.trim(),
-          'direccion_propuesta': _direccionNegocioController.text.trim(),
-          'telefono_contacto': _telefonoController.text.trim(),
-          'documento_identidad_url': docUrl ?? '',
-          'foto_establecimiento_url': fotoUrl ?? '',
-          'latitud': _latitudSeleccionada,
-          'longitud': _longitudSeleccionada,
-          'estado_solicitud': 'pendiente',
-        });
+  'usuario_id': usuarioIdCreado,
+  'nombre_negocio_propuesto': _nombreNegocioController.text.trim(),
+  'descripcion_negocio': _descripcionNegocioController.text.trim(),
+  'direccion_propuesta': _direccionNegocioController.text.trim(),
+  'telefono_contacto': _telefonoController.text.trim(),
+  'documento_identidad_url': docUrl,
+  'estado_solicitud': 'pendiente',
+});
       }
 
       if (!mounted) return;
 
-      // 3. Registrar sesión local
+      // 3. Inicio de Sesión Local
       SessionService().iniciarSesion(usuarioCreado);
 
       _mostrarSnackBar(
         _rolSeleccionado == 'dueno'
-            ? 'Registro exitoso. Tu solicitud de negocio está en revisión.'
+            ? 'Registro completado. Tu solicitud de negocio está pendiente de revisión por el administrador.'
             : '¡Bienvenido a La Ruta del Sabor!',
         const Color(0xFFD64E28),
       );
 
-      // 4. Redirección según rol
+      // 4. Redirección por Rol
       if (_rolSeleccionado == 'dueno') {
         Navigator.pushReplacementNamed(context, AppRoutes.duennoMainNav);
       } else {
         Navigator.pushReplacementNamed(context, AppRoutes.comensalMainNav);
       }
     } catch (e) {
+      // Rollback manual en caso de fallo durante el proceso del dueño
+      if (usuarioIdCreado != null) {
+        try {
+          final supabase = Supabase.instance.client;
+          await supabase.from('usuarios_r_sabor').delete().eq('id', usuarioIdCreado);
+        } catch (_) {}
+      }
+
       if (!mounted) return;
       _mostrarSnackBar('Error en el registro: ${e.toString()}', Colors.redAccent);
     } finally {
@@ -247,6 +293,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _mostrarSnackBar(String mensaje, Color colorFondo) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(mensaje),
@@ -273,7 +320,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             key: _formKey,
             autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -290,6 +337,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 12),
                 Text(
                   'La Ruta del Sabor',
+                  textAlign: TextAlign.center,
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFFD64E28),
@@ -394,7 +442,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   },
                 ),
 
-                // Formulario condicional para Dueño de Negocio
+                // Formulario Condicional para Dueño
                 AnimatedCrossFade(
                   firstChild: const SizedBox(width: double.infinity),
                   secondChild: Column(
@@ -446,7 +494,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Botón e indicador de Captura GPS
+                      // Botón GPS
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -464,7 +512,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   child: Text(
                                     _latitudSeleccionada != null
                                         ? 'Lat: ${_latitudSeleccionada!.toStringAsFixed(5)}, Long: ${_longitudSeleccionada!.toStringAsFixed(5)}'
-                                        : 'Ubicación GPS del establecimiento no capturada',
+                                        : 'Ubicación GPS no capturada',
                                     style: TextStyle(
                                       fontWeight: _latitudSeleccionada != null ? FontWeight.bold : FontWeight.normal,
                                       color: _latitudSeleccionada != null ? Colors.black87 : Colors.black54,
@@ -485,7 +533,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         child: CircularProgressIndicator(strokeWidth: 2),
                                       )
                                     : const Icon(Icons.gps_fixed),
-                                label: Text(_obteniendoUbicacion ? 'Obteniendo GPS...' : 'Obtener ubicación actual'),
+                                label: Text(_obteniendoUbicacion ? 'Obteniendo GPS...' : 'Capturar ubicación GPS'),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFFD64E28),
                                   side: const BorderSide(color: Color(0xFFD64E28)),
@@ -509,7 +557,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Adjuntar Documento CI / NIT
+                      // Adjunto Documento
                       InkWell(
                         onTap: _seleccionarDocumento,
                         borderRadius: BorderRadius.circular(16),
@@ -544,7 +592,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Adjuntar Foto del Local
+                      // Adjunto Foto
                       InkWell(
                         onTap: _seleccionarFotoLocal,
                         borderRadius: BorderRadius.circular(16),
@@ -599,8 +647,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Registrarse e Iniciar Sesión',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        : const Text(
+                            'Registrarse e Iniciar Sesión',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
               ],

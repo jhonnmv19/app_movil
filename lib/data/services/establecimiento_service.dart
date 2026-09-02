@@ -1,15 +1,26 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/establecimiento_model.dart';
 import '../models/plato_dia_item.dart';
 import '../models/usuario_model.dart';
+import 'session_service.dart';
 
 class EstablecimientoService {
-  final SupabaseClient client = Supabase.instance.client;
+  final SupabaseClient _client;
 
-  // --- MÓDULO SUPABASE STORAGE ---
+  /// Constructor con cliente Supabase inyectado o por defecto
+  EstablecimientoService({SupabaseClient? client})
+      : _client = client ?? Supabase.instance.client;
 
+  static const String _tablaEstablecimientos = 'establecimientos_r_sabor';
+
+  // ===========================================================================
+  // 1. SUPABASE STORAGE (SUBIDA Y GESTIÓN DE ARCHIVOS)
+  // ===========================================================================
+
+  /// Subida de imágenes compatible con Web y Móvil (Android/iOS)
   Future<String?> subirImagen({
     File? fileBytes,
     Uint8List? fileDataWeb,
@@ -18,63 +29,82 @@ class EstablecimientoService {
   }) async {
     try {
       if (kIsWeb) {
-        if (fileDataWeb == null) return null;
-        await client.storage.from(bucket).uploadBinary(
+        if (fileDataWeb == null) throw Exception('fileDataWeb no puede ser nulo en Web');
+        await _client.storage.from(bucket).uploadBinary(
               path,
               fileDataWeb,
               fileOptions: const FileOptions(upsert: true, cacheControl: '3600'),
             );
       } else {
-        if (fileBytes == null) return null;
-        await client.storage.from(bucket).upload(
+        if (fileBytes == null) throw Exception('fileBytes no puede ser nulo en plataformas nativas');
+        await _client.storage.from(bucket).upload(
               path,
               fileBytes,
               fileOptions: const FileOptions(upsert: true, cacheControl: '3600'),
             );
       }
-      return client.storage.from(bucket).getPublicUrl(path);
+      return _client.storage.from(bucket).getPublicUrl(path);
+    } on StorageException catch (e) {
+      debugPrint('[StorageException] Error subiendo imagen: ${e.message}');
+      return null;
     } catch (e) {
-      debugPrint('Error subiendo archivo a Storage: $e');
+      debugPrint('[EstablecimientoService] Error inesperado en subirImagen: $e');
       return null;
     }
   }
 
-  // --- MÓDULO USUARIOS Y PERFIL ---
+  // ===========================================================================
+  // 2. USUARIOS Y PERFILES DE USUARIO
+  // ===========================================================================
 
+  /// Obtiene los datos completos del usuario autenticado actualmente
   Future<UsuarioModel?> obtenerPerfilUsuarioActual() async {
     try {
-      final authUser = client.auth.currentUser;
-      if (authUser == null || authUser.email == null) return null;
+      final sessionEmail = SessionService().emailUsuario;
+      final userEmail = sessionEmail.isNotEmpty ? sessionEmail : _client.auth.currentUser?.email;
+      
+      if (userEmail == null || userEmail.isEmpty) {
+        debugPrint('[EstablecimientoService] ⚠️ No hay email de sesión activo.');
+        return null;
+      }
 
-      final data = await client
+      final response = await _client
           .from('usuarios_r_sabor')
           .select('*')
-          .eq('email', authUser.email!)
+          .eq('email', userEmail)
           .maybeSingle();
 
-      if (data == null) return null;
-      return UsuarioModel.fromJson(data);
+      if (response == null) {
+        debugPrint('[EstablecimientoService] ⚠️ No se encontró usuario en usuarios_r_sabor con email: $userEmail');
+        return null;
+      }
+      return UsuarioModel.fromJson(response);
+    } on PostgrestException catch (e) {
+      debugPrint('[PostgrestException] Error obteniendo perfil: ${e.message}');
+      return null;
     } catch (e) {
-      debugPrint('Error obteniendo perfil: $e');
+      debugPrint('[EstablecimientoService] Error en obtenerPerfilUsuarioActual: $e');
       return null;
     }
   }
 
+  /// Actualiza los datos del perfil (Nombre y Teléfono)
   Future<void> actualizarPerfil(int userId, String nuevoNombre, String nuevoTelefono) async {
     try {
-      await client.from('usuarios_r_sabor').update({
-        'nombre_completo': nuevoNombre,
-        'telefono': nuevoTelefono,
+      await _client.from('usuarios_r_sabor').update({
+        'nombre_completo': nuevoNombre.trim(),
+        'telefono': nuevoTelefono.trim(),
       }).eq('id', userId);
     } catch (e) {
-      debugPrint('Error actualizando perfil: $e');
+      debugPrint('[EstablecimientoService] Error actualizando perfil: $e');
       rethrow;
     }
   }
 
+  /// Consulta el último estado de la solicitud de registro del usuario
   Future<String> obtenerEstadoSolicitudUsuario(int usuarioId) async {
     try {
-      final response = await client
+      final response = await _client
           .from('solicitudes_registro_r_sabor')
           .select('estado_solicitud')
           .eq('usuario_id', usuarioId)
@@ -83,75 +113,235 @@ class EstablecimientoService {
           .maybeSingle();
 
       if (response == null) return 'sin_solicitud';
-      return response['estado_solicitud'] ?? 'pendiente';
+      return response['estado_solicitud'] as String? ?? 'pendiente';
     } catch (e) {
-      debugPrint('Error obteniendo estado de solicitud: $e');
+      debugPrint('[EstablecimientoService] Error en obtenerEstadoSolicitudUsuario: $e');
       return 'pendiente';
     }
   }
 
+  /// Envía una solicitud o reporte a soporte técnico
   Future<void> enviarReporteSoporte(int usuarioId, String descripcion) async {
     try {
-      await client.from('solicitudes_registro_r_sabor').insert({
+      await _client.from('solicitudes_registro_r_sabor').insert({
         'usuario_id': usuarioId,
         'nombre_negocio_propuesto': 'REPORTE_SOPORTE',
-        'descripcion_negocio': descripcion,
+        'descripcion_negocio': descripcion.trim(),
         'estado_solicitud': 'pendiente',
       });
     } catch (e) {
-      debugPrint('Error enviando reporte de soporte: $e');
+      debugPrint('[EstablecimientoService] Error enviando reporte de soporte: $e');
       rethrow;
     }
   }
 
-  // --- MÓDULO ESTABLECIMIENTOS ---
+  // ===========================================================================
+  // 3. GESTIÓN DE ESTABLECIMIENTOS (CREACIÓN, CONSULTA Y ACTUALIZACIÓN)
+  // ===========================================================================
 
-  Future<EstablecimientoModel?> obtenerEstablecimientoPorDueno(int duenoId) async {
+  /// Obtiene el establecimiento perteneciente al dueño actual.
+  /// Acepta [usuarioId] opcional. Si no se pasa, busca la sesión activa o por email.
+  Future<EstablecimientoModel?> obtenerEstablecimientoDelUsuario([int? usuarioId]) async {
     try {
-      final response = await client
-          .from('establecimientos_r_sabor')
-          .select('*')
-          .eq('dueno_id', duenoId)
-          .limit(1)
-          .maybeSingle();
+      int duenoId = usuarioId ?? SessionService().usuarioId;
 
-      if (response == null) return null;
-      return EstablecimientoModel.fromJson(response);
+      // Si el ID de usuario sigue siendo 0 o nulo, intentamos resolverlo vía email de sesión
+      if (duenoId == 0) {
+        final userEmail = SessionService().emailUsuario.isNotEmpty 
+            ? SessionService().emailUsuario 
+            : _client.auth.currentUser?.email;
+
+        if (userEmail != null && userEmail.isNotEmpty) {
+          final usuarioRes = await _client
+              .from('usuarios_r_sabor')
+              .select('id')
+              .eq('email', userEmail)
+              .maybeSingle();
+              
+          if (usuarioRes != null) {
+            duenoId = usuarioRes['id'] as int;
+            SessionService().usuarioId = duenoId; // Sincronizamos SessionService
+          }
+        }
+      }
+
+      if (duenoId == 0) {
+        debugPrint('[EstablecimientoService] ⚠️ No hay ID de usuario/dueño disponible para buscar.');
+        return null;
+      }
+
+      debugPrint('[EstablecimientoService] 🔍 Buscando establecimiento apuntando a la columna dueno_id: $duenoId');
+
+      // Consulta apuntando explícitamente a la columna `dueno_id`
+      final response = await _client
+          .from(_tablaEstablecimientos)
+          .select()
+          .eq('dueno_id', duenoId)
+          .order('id', ascending: true)
+          .limit(1);
+
+      final list = response as List<dynamic>;
+
+      if (list.isEmpty) {
+        debugPrint('[EstablecimientoService] ⚠️ No hay establecimientos vinculados a dueno_id $duenoId en $_tablaEstablecimientos.');
+        return null;
+      }
+
+      final estabData = list.first as Map<String, dynamic>;
+      debugPrint('[EstablecimientoService] ✅ Establecimiento encontrado: ${estabData['nombre_comercial']} (ID: ${estabData['id']})');
+
+      return EstablecimientoModel.fromJson(estabData);
+    } on PostgrestException catch (e) {
+      debugPrint('[EstablecimientoService] Error Postgrest al obtener el establecimiento: ${e.message} - ${e.details}');
+      return null;
     } catch (e) {
-      debugPrint('Error obteniendo establecimiento del dueño: $e');
+      debugPrint('[EstablecimientoService] Error inesperado al obtener el establecimiento: $e');
       return null;
     }
   }
 
+  /// Obtiene TODOS los establecimientos pertenecientes a un dueño específico
+  Future<List<EstablecimientoModel>> obtenerEstablecimientosDelDueno(int duenoId) async {
+    try {
+      final response = await _client
+          .from(_tablaEstablecimientos)
+          .select()
+          .eq('dueno_id', duenoId)
+          .order('id', ascending: true);
+
+      final data = response as List<dynamic>;
+      return data
+          .map((json) => EstablecimientoModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[EstablecimientoService] Error al obtener locales del dueño: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene la lista completa de todos los establecimientos registrados
+  Future<List<EstablecimientoModel>> obtenerEstablecimientos() async {
+    try {
+      final response = await _client
+          .from(_tablaEstablecimientos)
+          .select()
+          .order('id', ascending: true);
+
+      final data = response as List<dynamic>;
+      return data
+          .map((json) => EstablecimientoModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      debugPrint('[EstablecimientoService] Error al obtener establecimientos: ${e.message}');
+      throw Exception('Error al cargar la lista de establecimientos.');
+    } catch (e) {
+      debugPrint('[EstablecimientoService] Error inesperado al obtener establecimientos: $e');
+      return [];
+    }
+  }
+
+  /// Retorna todos los establecimientos con estado local 'abierto'
   Future<List<EstablecimientoModel>> obtenerEstablecimientosAbiertos() async {
     try {
-      final response = await client
-          .from('establecimientos_r_sabor')
+      final response = await _client
+          .from(_tablaEstablecimientos)
           .select('*')
           .eq('estado_local', 'abierto');
 
       final list = List<Map<String, dynamic>>.from(response as List);
       return list.map((e) => EstablecimientoModel.fromJson(e)).toList();
     } catch (e) {
-      debugPrint('Error obteniendo establecimientos abiertos: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo locales abiertos: $e');
       return [];
     }
   }
 
-  Future<void> actualizarEstadoLocal(int establecimientoId, String nuevoEstado) async {
+  /// Crea o registra un nuevo establecimiento para un dueño
+  Future<EstablecimientoModel?> crearEstablecimiento({
+    required int duenoId,
+    required String nombreComercial,
+    required String descripcion,
+    required String direccionTexto,
+    int? categoriaId,
+  }) async {
     try {
-      await client
-          .from('establecimientos_r_sabor')
-          .update({'estado_local': nuevoEstado})
-          .eq('id', establecimientoId);
+      final payload = {
+        'dueno_id': duenoId,
+        'nombre_comercial': nombreComercial.trim(),
+        'descripcion': descripcion.trim(),
+        'direccion_texto': direccionTexto.trim(),
+        if (categoriaId != null) 'categoria_id': categoriaId,
+        'estado_local': 'abierto',
+        'verificado': false,
+      };
+
+      final response = await _client
+          .from(_tablaEstablecimientos)
+          .insert(payload)
+          .select()
+          .single();
+
+      debugPrint('[EstablecimientoService] Establecimiento creado con ID: ${response['id']}');
+      return EstablecimientoModel.fromJson(response as Map<String, dynamic>);
+    } on PostgrestException catch (e) {
+      debugPrint('[EstablecimientoService] Error al crear establecimiento: ${e.message}');
+      throw Exception('No se pudo registrar el establecimiento.');
     } catch (e) {
-      debugPrint('Error actualizando estado del local: $e');
+      debugPrint('[EstablecimientoService] Error inesperado al crear establecimiento: $e');
       rethrow;
     }
   }
 
-  // --- MÓDULO PLATILLOS (MENÚ Y CONSULTAS) ---
+  /// Actualiza la información del establecimiento
+  Future<bool> actualizarEstablecimiento({
+    required int establecimientoId,
+    required String nombreComercial,
+    required String descripcion,
+    required String direccionTexto,
+    String? estadoLocal,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{
+        'nombre_comercial': nombreComercial.trim(),
+        'descripcion': descripcion.trim(),
+        'direccion_texto': direccionTexto.trim(),
+        if (estadoLocal != null) 'estado_local': estadoLocal,
+      };
 
+      await _client
+          .from(_tablaEstablecimientos)
+          .update(updateData)
+          .eq('id', establecimientoId);
+
+      debugPrint('[EstablecimientoService] Establecimiento ID $establecimientoId actualizado correctamente.');
+      return true;
+    } on PostgrestException catch (e) {
+      debugPrint('[EstablecimientoService] Error Postgrest al actualizar establecimiento: ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('[EstablecimientoService] Error inesperado al actualizar establecimiento: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza el estado actual del establecimiento (ej: 'abierto', 'cerrado')
+  Future<void> actualizarEstadoLocal(int establecimientoId, String nuevoEstado) async {
+    try {
+      await _client
+          .from(_tablaEstablecimientos)
+          .update({'estado_local': nuevoEstado})
+          .eq('id', establecimientoId);
+    } catch (e) {
+      debugPrint('[EstablecimientoService] Error actualizando estado del local: $e');
+      rethrow;
+    }
+  }
+
+  // ===========================================================================
+  // 4. PLATILLOS Y CATÁLOGO / MENÚ
+  // ===========================================================================
+
+  /// Crea un nuevo platillo en la base de datos
   Future<void> crearPlatillo({
     required int establecimientoId,
     required int categoriaPlatilloId,
@@ -162,24 +352,25 @@ class EstablecimientoService {
     bool disponible = true,
   }) async {
     try {
-      await client.from('platillos_r_sabor').insert({
+      await _client.from('platillos_r_sabor').insert({
         'establecimiento_id': establecimientoId,
         'categoria_platillo_id': categoriaPlatilloId,
-        'nombre': nombre,
-        'descripcion': descripcion,
+        'nombre': nombre.trim(),
+        'descripcion': descripcion.trim(),
         'precio_bs': precioBs,
         'imagen_url': imagenUrl,
         'disponible': disponible,
       });
     } catch (e) {
-      debugPrint('Error creando platillo: $e');
+      debugPrint('[EstablecimientoService] Error creando platillo: $e');
       rethrow;
     }
   }
 
+  /// Obtiene los platillos pertenecientes a un establecimiento en particular
   Future<List<Map<String, dynamic>>> obtenerPlatillosPorEstablecimiento(int establecimientoId) async {
     try {
-      final response = await client
+      final response = await _client
           .from('platillos_r_sabor')
           .select('''
             id,
@@ -195,18 +386,19 @@ class EstablecimientoService {
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      debugPrint('Error obteniendo platillos del establecimiento: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo platillos por local: $e');
       return [];
     }
   }
 
+  /// Búsqueda y filtrado avanzado de platillos disponibles
   Future<List<Map<String, dynamic>>> obtenerPlatosPopulares({
     String query = '',
     String? categoria,
     double? precioMaximo,
   }) async {
     try {
-      dynamic builder = client.from('platillos_r_sabor').select('''
+      dynamic builder = _client.from('platillos_r_sabor').select('''
         id,
         nombre,
         descripcion,
@@ -225,8 +417,8 @@ class EstablecimientoService {
         )
       ''').eq('disponible', true);
 
-      if (query.isNotEmpty) {
-        builder = builder.ilike('nombre', '%$query%');
+      if (query.trim().isNotEmpty) {
+        builder = builder.ilike('nombre', '%${query.trim()}%');
       }
 
       if (categoria != null && categoria.isNotEmpty && categoria != 'Todos') {
@@ -240,47 +432,52 @@ class EstablecimientoService {
       final response = await builder;
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      debugPrint('Error obteniendo platos populares: $e');
+      debugPrint('[EstablecimientoService] Error en búsqueda de platos populares: $e');
       return [];
     }
   }
 
+  /// Obtiene el listado completo de categorías de platillos
   Future<List<Map<String, dynamic>>> obtenerCategorias() async {
     try {
-      final response = await client
+      final response = await _client
           .from('categorias_platillos_r_sabor')
           .select('id, nombre')
           .order('nombre', ascending: true);
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      debugPrint('Error obteniendo categorías: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo categorías: $e');
       return [];
     }
   }
 
-  // --- MÓDULO FOTOS GALERÍA ---
+  // ===========================================================================
+  // 5. GALERÍA DE FOTOS
+  // ===========================================================================
 
+  /// Asocia una nueva imagen en la galería del establecimiento
   Future<void> agregarFotoEstablecimiento({
     required int establecimientoId,
     required String imagenUrl,
     bool esPrincipal = false,
   }) async {
     try {
-      await client.from('fotos_establecimiento_r_sabor').insert({
+      await _client.from('fotos_establecimiento_r_sabor').insert({
         'establecimiento_id': establecimientoId,
         'imagen_url': imagenUrl,
         'es_principal': esPrincipal,
       });
     } catch (e) {
-      debugPrint('Error agregando foto del establecimiento: $e');
+      debugPrint('[EstablecimientoService] Error agregando foto a la galería: $e');
       rethrow;
     }
   }
 
+  /// Obtiene la lista de fotos de un establecimiento
   Future<List<Map<String, dynamic>>> obtenerFotosEstablecimiento(int establecimientoId) async {
     try {
-      final response = await client
+      final response = await _client
           .from('fotos_establecimiento_r_sabor')
           .select('id, imagen_url, es_principal')
           .eq('establecimiento_id', establecimientoId)
@@ -288,13 +485,16 @@ class EstablecimientoService {
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      debugPrint('Error obteniendo fotos del establecimiento: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo galería del establecimiento: $e');
       return [];
     }
   }
 
-  // --- MÓDULO PLATO DEL DÍA ---
+  // ===========================================================================
+  // 6. PLATO DEL DÍA / OFERTAS
+  // ===========================================================================
 
+  /// Publica un plato del día u oferta especial
   Future<void> publicarPlatoDelDia({
     required int establecimientoId,
     required String tituloOferta,
@@ -304,23 +504,24 @@ class EstablecimientoService {
     int? platilloId,
   }) async {
     try {
-      await client.from('plato_del_dia_r_sabor').insert({
+      await _client.from('plato_del_dia_r_sabor').insert({
         'establecimiento_id': establecimientoId,
-        'titulo_oferta': tituloOferta,
-        'descripcion_oferta': descripcionOferta,
+        'titulo_oferta': tituloOferta.trim(),
+        'descripcion_oferta': descripcionOferta.trim(),
         'precio_oferta_bs': precioOfertaBs,
         'disponible_ahora': disponibleAhora,
         'platillo_id': platilloId,
       });
     } catch (e) {
-      debugPrint('Error publicando plato del día: $e');
+      debugPrint('[EstablecimientoService] Error publicando plato del día: $e');
       rethrow;
     }
   }
 
+  /// Obtiene los platos del día asociados a un establecimiento específico
   Future<List<Map<String, dynamic>>> obtenerPlatosDelDiaPorEstablecimiento(int establecimientoId) async {
     try {
-      final response = await client
+      final response = await _client
           .from('plato_del_dia_r_sabor')
           .select('*')
           .eq('establecimiento_id', establecimientoId)
@@ -328,14 +529,15 @@ class EstablecimientoService {
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      debugPrint('Error obteniendo ofertas del día del establecimiento: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo ofertas del establecimiento: $e');
       return [];
     }
   }
 
+  /// Obtiene todas las ofertas disponibles activas actualmente en la app
   Future<List<PlatoDiaItem>> obtenerPlatosDelDiaDisponibles() async {
     try {
-      final response = await client
+      final response = await _client
           .from('plato_del_dia_r_sabor')
           .select('''
             id,
@@ -359,50 +561,50 @@ class EstablecimientoService {
       final list = List<Map<String, dynamic>>.from(response as List);
       return list.map((e) => PlatoDiaItem.fromJson(e)).toList();
     } catch (e) {
-      debugPrint('Error obteniendo platos del día: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo platos del día disponibles: $e');
       return [];
     }
   }
 
-  // --- MÓDULO FAVORITOS ---
+  // ===========================================================================
+  // 7. FAVORITOS
+  // ===========================================================================
 
+  /// Retorna los IDs de establecimientos marcados como favoritos por el usuario
   Future<List<int>> obtenerIdsFavoritos(int comensalId) async {
     try {
-      final res = await client
+      final res = await _client
           .from('favoritos_r_sabor')
           .select('establecimiento_id')
           .eq('comensal_id', comensalId)
           .not('establecimiento_id', 'is', null);
 
       final list = res as List<dynamic>;
-      return list
-          .map((e) => e['establecimiento_id'] is int
-              ? e['establecimiento_id'] as int
-              : int.parse(e['establecimiento_id'].toString()))
-          .toList();
+      return list.map((e) => e['establecimiento_id'] as int).toList();
     } catch (e) {
-      debugPrint('Error obteniendo favoritos: $e');
+      debugPrint('[EstablecimientoService] Error obteniendo favoritos: $e');
       return [];
     }
   }
 
+  /// Agrega o quita un establecimiento de los favoritos del usuario
   Future<bool> toggleFavorito(int comensalId, int establecimientoId, bool esFavorito) async {
     try {
       if (esFavorito) {
-        await client
+        await _client
             .from('favoritos_r_sabor')
             .delete()
             .eq('comensal_id', comensalId)
             .eq('establecimiento_id', establecimientoId);
       } else {
-        await client.from('favoritos_r_sabor').insert({
+        await _client.from('favoritos_r_sabor').insert({
           'comensal_id': comensalId,
           'establecimiento_id': establecimientoId,
         });
       }
       return true;
     } catch (e) {
-      debugPrint('Error alternando favorito: $e');
+      debugPrint('[EstablecimientoService] Error alternando estado de favorito: $e');
       return false;
     }
   }

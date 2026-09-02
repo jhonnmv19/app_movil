@@ -1,3 +1,4 @@
+// lib/presentation/screens/duenno/duenno_main_navigation_screen.dart
 import 'package:flutter/material.dart';
 import 'duenno_home_screen.dart';
 import 'duenno_profile_screen.dart';
@@ -19,6 +20,7 @@ class _DuennoMainNavigationScreenState
   int _currentIndex = 0;
   int? _establecimientoId;
   bool _isLoading = true;
+  String? _errorMessage;
 
   final EstablecimientoService _establecimientoService =
       EstablecimientoService();
@@ -29,36 +31,57 @@ class _DuennoMainNavigationScreenState
     _cargarEstablecimiento();
   }
 
-  /// Obtiene el perfil del usuario autenticado y su establecimiento asignado
+  /// Obtiene de forma segura el establecimiento vinculado al dueño actual en sesión
   Future<void> _cargarEstablecimiento() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
-      // 1. Intentar obtener perfil por servicio de establecimiento
-      var perfil = await _establecimientoService.obtenerPerfilUsuarioActual();
+      final session = SessionService();
+      final usuarioActual = session.usuarioActual;
 
-      // 2. Fallback: Usar la sesión guardada localmente si el llamado remoto falla
-      perfil ??= SessionService().usuarioActual;
-
-      if (perfil != null) {
-        final estab = await _establecimientoService
-            .obtenerEstablecimientoPorDueno(perfil.id);
-
-        if (estab != null && mounted) {
+      if (usuarioActual == null) {
+        debugPrint('⚠️ [DuennoMainNavigation] No hay usuario registrado en SessionService.');
+        if (mounted) {
           setState(() {
-            _establecimientoId = estab.id;
+            _errorMessage = 'No hay una sesión activa de usuario.';
             _isLoading = false;
           });
-          return;
         }
+        return;
       }
-    } catch (e) {
-      debugPrint('Error cargando datos del dueño: $e');
+
+      final dynamic idUsuario = usuarioActual.id;
+      debugPrint('🔍 [DuennoMainNavigation] Buscando establecimiento para el usuario ID: $idUsuario');
+
+      // Consultamos el establecimiento vinculado
+      final estab = await _establecimientoService.obtenerEstablecimientoDelUsuario();
+
+      if (estab != null && mounted) {
+        debugPrint('✅ [DuennoMainNavigation] Establecimiento encontrado -> ID: ${estab.id}');
+        setState(() {
+          _establecimientoId = estab.id;
+          _isLoading = false;
+        });
+        return;
+      } else {
+        debugPrint('❌ [DuennoMainNavigation] El servicio retornó nulo. No existe un registro en "establecimientos" vinculado a este usuario.');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('💥 [DuennoMainNavigation] Excepción al cargar datos del dueño: $e');
+      debugPrint('Stacktrace: $stackTrace');
+      _errorMessage = e.toString();
     }
 
     if (mounted) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _establecimientoId = null;
+        _isLoading = false;
+      });
     }
   }
 
@@ -67,46 +90,132 @@ class _DuennoMainNavigationScreenState
     if (_isLoading) {
       return const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(
-            color: AppTheme.primaryOrange,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                color: AppTheme.primaryOrange,
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Cargando información del establecimiento...',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+            ],
           ),
         ),
       );
     }
 
+    // Pantalla de error/advertencia si no se encuentra el establecimiento vinculado
     if (_establecimientoId == null) {
+      final usuario = SessionService().usuarioActual;
+      final nombreUsuario = SessionService().nombreMostrar;
+      final idUsuario = SessionService().usuarioId ?? usuario?.id ?? 'Desconocido';
+
       return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.grey),
+              tooltip: 'Cerrar sesión',
+              onPressed: () {
+                SessionService().cerrarSesion();
+                if (context.mounted) {
+                  Navigator.of(context).pushReplacementNamed('/login');
+                }
+              },
+            ),
+          ],
+        ),
         body: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(
                   Icons.storefront_outlined,
-                  size: 64,
-                  color: Colors.grey,
+                  size: 72,
+                  color: Colors.orangeAccent,
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'No se encontró un establecimiento asignado a tu cuenta.',
+                  'No se encontró un establecimiento asignado a tu cuenta',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Usuario en sesión: $nombreUsuario\nID de Usuario: $idUsuario',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const Divider(),
+                        Text(
+                          'Detalle del error: $_errorMessage',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, color: Colors.red),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 const Text(
-                  'Verifica en la base de datos que exista un registro en la tabla "establecimientos_r_sabor" vinculado a tu dueno_id.',
+                  'Verifica en la base de datos (Supabase) que exista un registro en la tabla "establecimientos" donde el campo del dueño o usuario sea igual al ID mostrado arriba.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: Colors.grey),
                 ),
                 const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: _cargarEstablecimiento,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryOrange,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Reintentar'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        SessionService().cerrarSesion();
+                        if (context.mounted) {
+                          Navigator.of(context).pushReplacementNamed('/login');
+                        }
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Salir'),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      onPressed: _cargarEstablecimiento,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
                 ),
               ],
             ),

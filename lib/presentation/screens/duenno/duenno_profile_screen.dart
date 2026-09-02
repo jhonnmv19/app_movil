@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../core/theme/app_theme.dart';
 import '../../../data/services/session_service.dart';
 import '../../../data/services/usuarios_service.dart';
@@ -24,7 +23,8 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
   Future<Map<String, dynamic>?> _cargarPerfil() async {
     final usuarioActual = SessionService().usuarioActual;
     if (usuarioActual == null) return null;
-    return await _usuariosService.obtenerPerfilDuenno(usuarioActual.id);
+
+    return await _usuariosService.obtenerPerfilDueno(usuarioActual.id);
   }
 
   Future<void> _recargarPerfil() async {
@@ -35,7 +35,6 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
   }
 
   Future<void> _cerrarSesion() async {
-    // Limpia la sesión local en memoria
     SessionService().cerrarSesion();
 
     if (!mounted) return;
@@ -75,7 +74,7 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
 
   String _obtenerEstadoLocal(Map<String, dynamic>? establecimiento) {
     final estado = establecimiento?['estado_local'];
-    if (estado == null || estado.toString().isEmpty) {
+    if (estado == null || estado.toString().trim().isEmpty) {
       return 'Sin estado';
     }
     return estado.toString();
@@ -134,7 +133,7 @@ class _DuennoProfileScreenState extends State<DuennoProfileScreen> {
               children: [
                 _OwnerHeader(
                   nombre: data['nombre_completo'] ?? 'Sin Nombre',
-                  rol: (data['rol'] ?? 'dueno').toString().toUpperCase(),
+                  rol: (data['rol'] ?? 'dueño').toString().toUpperCase(),
                   usuarioActivo: usuarioActivo,
                 ),
                 const SizedBox(height: 22),
@@ -337,7 +336,7 @@ class _BusinessProfileCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-           color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -554,8 +553,7 @@ class _InfoTile extends StatelessWidget {
     return Column(
       children: [
         ListTile(
-          // SE REMOVIÓ EL 'const' DE AQUÍ
-          leading: Icon(icon, color: AppTheme.primaryOrange), 
+          leading: Icon(icon, color: AppTheme.primaryOrange),
           title: Text(
             title,
             style: const TextStyle(

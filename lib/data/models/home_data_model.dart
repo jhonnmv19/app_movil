@@ -19,47 +19,65 @@ class PlatoDiaItem {
     this.direccion,
   });
 
-  // --- GETTERS DE COMPATIBILIDAD (Evitan errores si tus pantallas usan los nombres antiguos) ---
+  // Getters de compatibilidad para evitar romper UI previa
   String get titulo => tituloOferta;
   String? get descripcion => descripcionOferta;
   double get precio => precioOfertaBs;
 
   factory PlatoDiaItem.fromJson(Map<String, dynamic> json) {
-    // Mapeo seguro de relaciones de Supabase
     final est = json['establecimientos_r_sabor'] as Map<String, dynamic>?;
     final platillo = json['platillos_r_sabor'] as Map<String, dynamic>?;
 
     return PlatoDiaItem(
-      // Parsing seguro de ID (int o String)
-      id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
-      
-      // Mapeo flexible de títulos
+      id: json['id'] is int ? json['id'] : int.parse(json['id']?.toString() ?? '0'),
       tituloOferta: json['titulo_oferta'] ?? json['nombre'] ?? '',
-      
-      // Mapeo flexible de descripción
       descripcionOferta: json['descripcion_oferta'] ?? json['descripcion'],
-      
-      // Casting seguro de precio
       precioOfertaBs: ((json['precio_oferta_bs'] ?? json['precio_bs'] ?? 0) as num).toDouble(),
-      
-      // Estado de disponibilidad
       disponibleAhora: json['disponible_ahora'] ?? true,
-      
-      // Mapeo seguro de imagen
       imagenUrl: platillo != null ? platillo['imagen_url'] : json['imagen_url'],
-      
-      // Obtención del establecimiento desde la relación o campo plano
       nombreEstablecimiento: est != null 
           ? (est['nombre_comercial'] ?? 'Restaurante') 
           : (json['nombre_comercial'] ?? 'Restaurante'),
-          
-      // Dirección del establecimiento
       direccion: est != null ? est['direccion_texto'] : json['direccion_texto'],
     );
   }
 
-  // Compatibilidad con código que use fromMap
   factory PlatoDiaItem.fromMap(Map<String, dynamic> map) => PlatoDiaItem.fromJson(map);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'titulo_oferta': tituloOferta,
+      'descripcion_oferta': descripcionOferta,
+      'precio_oferta_bs': precioOfertaBs,
+      'disponible_ahora': disponibleAhora,
+      'imagen_url': imagenUrl,
+      'nombre_comercial': nombreEstablecimiento,
+      'direccion_texto': direccion,
+    };
+  }
+
+  PlatoDiaItem copyWith({
+    int? id,
+    String? tituloOferta,
+    String? descripcionOferta,
+    double? precioOfertaBs,
+    bool? disponibleAhora,
+    String? imagenUrl,
+    String? nombreEstablecimiento,
+    String? direccion,
+  }) {
+    return PlatoDiaItem(
+      id: id ?? this.id,
+      tituloOferta: tituloOferta ?? this.tituloOferta,
+      descripcionOferta: descripcionOferta ?? this.descripcionOferta,
+      precioOfertaBs: precioOfertaBs ?? this.precioOfertaBs,
+      disponibleAhora: disponibleAhora ?? this.disponibleAhora,
+      imagenUrl: imagenUrl ?? this.imagenUrl,
+      nombreEstablecimiento: nombreEstablecimiento ?? this.nombreEstablecimiento,
+      direccion: direccion ?? this.direccion,
+    );
+  }
 }
 
 class CategoriaItem {
@@ -77,7 +95,7 @@ class CategoriaItem {
 
   factory CategoriaItem.fromJson(Map<String, dynamic> json) {
     return CategoriaItem(
-      id: json['id'] is int ? json['id'] : int.parse(json['id'].toString()),
+      id: json['id'] is int ? json['id'] : int.parse(json['id']?.toString() ?? '0'),
       nombre: json['nombre'] ?? '',
       descripcion: json['descripcion'],
       iconoUrl: json['imagen_icono'] ?? json['icono_url'],
@@ -85,7 +103,16 @@ class CategoriaItem {
   }
 
   factory CategoriaItem.fromMap(Map<String, dynamic> map) => CategoriaItem.fromJson(map);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'descripcion': descripcion,
+      'icono_url': iconoUrl,
+    };
+  }
 }
 
-// Aliases por si alguna parte del código busca CategoriaModel en lugar de CategoriaItem
+// Alias de clase para máxima flexibilidad en tu proyecto
 typedef CategoriaModel = CategoriaItem;

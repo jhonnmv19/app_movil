@@ -45,18 +45,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Helper seguro para extraer el ID
-  dynamic _obtenerIdUnico(dynamic value) {
+  String? _obtenerIdUnico(dynamic value) {
     if (value == null) return null;
     return value.toString();
   }
 
   // Helper seguro para parsear Precios
-  double _parsePrecio(Map<String, dynamic> item) {
-    final rawValue = item['precio_bs'] ??
-        item['precio'] ??
-        item['precio_plato'] ??
-        item['precio_unidad'] ??
-        item['costo'];
+  double _parsePrecio(Map<String, dynamic> item, {List<String>? keys}) {
+    final candidateKeys = keys ?? ['precio_bs', 'precio', 'precio_plato', 'precio_unidad', 'costo'];
+    dynamic rawValue;
+    for (var key in candidateKeys) {
+      if (item.containsKey(key) && item[key] != null) {
+        rawValue = item[key];
+        break;
+      }
+    }
 
     if (rawValue is num) return rawValue.toDouble();
     if (rawValue is String) return double.tryParse(rawValue) ?? 0.0;
@@ -72,13 +75,12 @@ class _HomeScreenState extends State<HomeScreen> {
       UsuarioModel? user = _sessionService.usuarioActual;
       user ??= await _service.obtenerPerfilUsuarioActual();
 
-      // 2. Si se recuperó sesión, guardar en el Singleton
+      // 2. Si se recuperó sesión, guardar en el Singleton y cargar favoritos
       if (user != null) {
         _sessionService.iniciarSesion(user);
         final favs = await _favoritosService.obtenerIdsPlatillosFavoritos(user.id);
         _platillosFavoritosIds = favs.map((e) => e.toString()).toSet();
       } else {
-        // Garantizar limpieza si no hay usuario activo
         _platillosFavoritosIds.clear();
       }
 
@@ -160,15 +162,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _toggleFav(dynamic rawPlatilloId) async {
-    // 1. Obtener y parsear el ID a int para coincidir con la BD
     final String? platilloIdStr = _obtenerIdUnico(rawPlatilloId);
     final int? platilloIdInt = platilloIdStr != null ? int.tryParse(platilloIdStr) : null;
 
-    // 2. Guard de Sesión e ID válido
     final usuarioActual = _usuario ?? _sessionService.usuarioActual;
 
     if (usuarioActual == null || platilloIdInt == null) {
-      // Limpieza preventiva si se detecta falta de sesión
       if (_usuario != null || _platillosFavoritosIds.isNotEmpty) {
         setState(() {
           _usuario = null;
@@ -187,11 +186,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // 3. Determinar el estado actual usando la representación en String para el Set local
     final String idClave = platilloIdInt.toString();
     final bool esFav = _platillosFavoritosIds.contains(idClave);
 
-    // 4. Actualización optimista de la UI
+    // Actualización optimista de la UI
     setState(() {
       if (esFav) {
         _platillosFavoritosIds.remove(idClave);
@@ -200,14 +198,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
-    // 5. Llamada al servicio con int explícito
+    // Llamada al servicio con los parámetros correctos
     final exito = await _favoritosService.toggleFavoritoPlatillo(
       comensalId: usuarioActual.id,
       platilloId: platilloIdInt,
-      esFavorito: esFav,
+      esFavoritoActualmente: esFav,
     );
 
-    // 6. Revertir cambio en caso de falla en backend
+    // Revertir cambio en caso de falla en backend
     if (!exito && mounted) {
       setState(() {
         if (esFav) {
@@ -501,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       final bool esFavorito = platilloIdStr != null && _platillosFavoritosIds.contains(platilloIdStr);
 
                       final est = item['establecimientos_r_sabor'] as Map<String, dynamic>?;
-                      final double calificacion = est != null ? _parsePrecio(est) : 5.0;
+                      final double calificacion = est != null ? _parsePrecio(est, keys: ['calificacion', 'rating', 'puntuacion']) : 5.0;
 
                       return Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

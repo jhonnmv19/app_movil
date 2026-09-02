@@ -61,6 +61,50 @@ class PlatoDiaItem {
   }
 
   factory PlatoDiaItem.fromMap(Map<String, dynamic> map) => PlatoDiaItem.fromJson(map);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'establecimiento_id': establecimientoId,
+      'titulo_oferta': tituloOferta,
+      'descripcion_oferta': descripcionOferta,
+      'precio_oferta_bs': precioOfertaBs,
+      'disponible_ahora': disponibleAhora,
+      'imagen_url': imagenUrl,
+      'nombre_comercial': nombreRestaurante,
+      'direccion_texto': direccion,
+      'latitud': latitud,
+      'longitud': longitud,
+    };
+  }
+
+  PlatoDiaItem copyWith({
+    int? id,
+    int? establecimientoId,
+    String? tituloOferta,
+    String? descripcionOferta,
+    double? precioOfertaBs,
+    bool? disponibleAhora,
+    String? imagenUrl,
+    String? nombreRestaurante,
+    String? direccion,
+    double? latitud,
+    double? longitud,
+  }) {
+    return PlatoDiaItem(
+      id: id ?? this.id,
+      establecimientoId: establecimientoId ?? this.establecimientoId,
+      tituloOferta: tituloOferta ?? this.tituloOferta,
+      descripcionOferta: descripcionOferta ?? this.descripcionOferta,
+      precioOfertaBs: precioOfertaBs ?? this.precioOfertaBs,
+      disponibleAhora: disponibleAhora ?? this.disponibleAhora,
+      imagenUrl: imagenUrl ?? this.imagenUrl,
+      nombreRestaurante: nombreRestaurante ?? this.nombreRestaurante,
+      direccion: direccion ?? this.direccion,
+      latitud: latitud ?? this.latitud,
+      longitud: longitud ?? this.longitud,
+    );
+  }
 }
 
 class CategoriaItem {
@@ -88,6 +132,15 @@ class CategoriaItem {
   }
 
   factory CategoriaItem.fromMap(Map<String, dynamic> map) => CategoriaItem.fromJson(map);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'descripcion': descripcion,
+      'icono_url': iconoUrl,
+    };
+  }
 }
 
 typedef CategoriaModel = CategoriaItem;

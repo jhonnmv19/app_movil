@@ -4,6 +4,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models/establecimiento_model.dart';
 import '../../../data/services/establecimiento_service.dart';
 import '../../../data/services/session_service.dart';
+import '../../../data/services/solicitudes_service.dart';
 
 class DuennoHomeScreen extends StatefulWidget {
   const DuennoHomeScreen({super.key});
@@ -13,14 +14,15 @@ class DuennoHomeScreen extends StatefulWidget {
 }
 
 class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
-  final EstablecimientoService _service = EstablecimientoService();
+  final EstablecimientoService _establecimientoService = EstablecimientoService();
+  final SolicitudesService _solicitudesService = SolicitudesService();
 
   bool _isLoading = true;
   bool _estaAbierto = false;
   bool _actualizandoEstado = false;
 
   EstablecimientoModel? _establecimiento;
-  String _estadoSolicitud = 'PENDIENTE';
+  String _estadoSolicitud = 'SIN SOLICITUD';
 
   @override
   void initState() {
@@ -29,27 +31,37 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
   }
 
   Future<void> _cargarDatosIniciales() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
-    // Obtener usuario autenticado desde SessionService
-    final usuario = SessionService().usuarioActual;
+    try {
+      final usuario = SessionService().usuarioActual;
 
-    if (usuario != null) {
-      final estab = await _service.obtenerEstablecimientoPorDueno(usuario.id);
-      final estadoSol =
-          await _service.obtenerEstadoSolicitudUsuario(usuario.id);
+      if (usuario != null) {
+        debugPrint('[DuennoHomeScreen] Cargando datos para usuario ID: ${usuario.id}');
 
-      if (mounted) {
-        setState(() {
-          _establecimiento = estab;
-          _estaAbierto = estab?.estadoLocal == 'abierto';
-          _estadoSolicitud = estadoSol;
-        });
+        // 1. Obtener estado de la solicitud enviada por el usuario
+        final estadoSol = await _solicitudesService.obtenerEstadoSolicitudUsuario(usuario.id);
+
+        // 2. Obtener el establecimiento asociado al dueño (Paso posicional del ID)
+        final estab = await _establecimientoService.obtenerEstablecimientoDelUsuario(usuario.id);
+
+        if (mounted) {
+          setState(() {
+            _establecimiento = estab;
+            _estaAbierto = (estab?.estadoLocal?.toLowerCase() == 'abierto');
+            _estadoSolicitud = estadoSol;
+          });
+        }
+      } else {
+        debugPrint('[DuennoHomeScreen] Advertencia: No se encontró sesión activa.');
       }
-    }
-
-    if (mounted) {
-      setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('[DuennoHomeScreen] Error al cargar datos: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -58,19 +70,18 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
 
     setState(() {
       _actualizandoEstado = true;
-      _estaAbierto = nuevoEstado; // Actualización optimista de interfaz
+      _estaAbierto = nuevoEstado;
     });
 
     try {
       final estadoStr = nuevoEstado ? 'abierto' : 'cerrado';
-      await _service.actualizarEstadoLocal(_establecimiento!.id, estadoStr);
+      await _establecimientoService.actualizarEstadoLocal(_establecimiento!.id, estadoStr);
     } catch (e) {
       if (mounted) {
-        // Revertir cambio si ocurre un fallo en Supabase
         setState(() => _estaAbierto = !nuevoEstado);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Error al actualizar el estado del local'),
+            content: Text('Error al cambiar el estado del local.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -82,11 +93,32 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
     }
   }
 
+  void _abrirMenuDigital() {
+    if (_establecimiento == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes tener un local asignado para gestionar el menú.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Navigator.pushNamed(
+      context,
+      AppRoutes.duennoMenu,
+      arguments: {'establecimientoId': _establecimiento!.id},
+    );
+  }
+
   void _abrirSolicitudes() {
     Navigator.pushNamed(
       context,
       AppRoutes.duennoRequests,
-      arguments: {'establecimientoId': _establecimiento?.id ?? 0},
+      arguments: {
+        'establecimientoId': _establecimiento?.id,
+        'estadoSolicitud': _estadoSolicitud,
+      },
     );
   }
 
@@ -112,8 +144,13 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
             children: [
               _buildHeader(context),
               const SizedBox(height: 20),
-              _buildBusinessStatus(),
-              const SizedBox(height: 24),
+              if (_establecimiento != null) ...[
+                _buildBusinessStatus(),
+                const SizedBox(height: 24),
+              ] else ...[
+                _buildBannerSinEstablecimiento(),
+                const SizedBox(height: 24),
+              ],
               _buildOfferCard(),
               const SizedBox(height: 26),
               const Text(
@@ -129,23 +166,19 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
                   Expanded(
                     child: _StatCard(
                       title: 'Menú Digital',
-                      value: _establecimiento != null
-                          ? 'Ver Platos'
-                          : 'Sin Local',
+                      value: _establecimiento != null ? 'Ver Platos' : 'Sin Local',
                       icon: Icons.menu_book_rounded,
                       color: Colors.blue,
-                      onTap: () {
-                        // Navegación opcional al menú o platillos
-                      },
+                      onTap: _abrirMenuDigital,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _StatCard(
-                      title: 'Solicitud',
+                      title: 'Estado Solicitud',
                       value: _estadoSolicitud.toUpperCase(),
                       icon: Icons.assignment_turned_in_rounded,
-                      color: Colors.orange,
+                      color: _getColorEstadoSolicitud(_estadoSolicitud),
                       onTap: _abrirSolicitudes,
                     ),
                   ),
@@ -158,9 +191,58 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
     );
   }
 
+  Color _getColorEstadoSolicitud(String estado) {
+    switch (estado.toLowerCase()) {
+      case 'aprobado':
+        return Colors.green;
+      case 'pendiente':
+        return Colors.orange;
+      case 'rechazado':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildBannerSinEstablecimiento() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, color: Colors.amber.shade900, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Local no asignado',
+                  style: TextStyle(
+                    color: Colors.amber.shade900,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  _estadoSolicitud == 'pendiente'
+                      ? 'Tu solicitud está en revisión por un administrador.'
+                      : 'Envía tu solicitud para dar de alta tu restaurante.',
+                  style: TextStyle(color: Colors.amber.shade800, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeader(BuildContext context) {
-    final nombreLocal =
-        _establecimiento?.nombreComercial ?? 'Sin Registro de Local';
+    final nombreLocal = _establecimiento?.nombreComercial ?? 'Sin Registro de Local';
 
     return Row(
       children: [
@@ -255,9 +337,7 @@ class _DuennoHomeScreenState extends State<DuennoHomeScreen> {
               : Switch.adaptive(
                   value: _estaAbierto,
                   activeTrackColor: Colors.green,
-                  onChanged: _establecimiento == null
-                      ? null
-                      : _toggleEstadoLocal,
+                  onChanged: _toggleEstadoLocal,
                 ),
         ],
       ),

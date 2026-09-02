@@ -34,4 +34,36 @@ class PlaceModel {
           : int.tryParse(json['categoria_id']?.toString() ?? ''),
     );
   }
+
+  factory PlaceModel.fromMap(Map<String, dynamic> map) => PlaceModel.fromJson(map);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre_comercial': name,
+      'direccion_texto': address,
+      'latitud': location.latitude,
+      'longitud': location.longitude,
+      'estado_local': estadoLocal,
+      'categoria_id': categoriaId,
+    };
+  }
+
+  PlaceModel copyWith({
+    int? id,
+    String? name,
+    String? address,
+    LatLng? location,
+    String? estadoLocal,
+    int? categoriaId,
+  }) {
+    return PlaceModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      location: location ?? this.location,
+      estadoLocal: estadoLocal ?? this.estadoLocal,
+      categoriaId: categoriaId ?? this.categoriaId,
+    );
+  }
 }

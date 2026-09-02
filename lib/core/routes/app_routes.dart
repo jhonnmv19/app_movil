@@ -32,7 +32,8 @@ class AppRoutes {
   // Rutas - Dueño
   static const String duennoMainNav = '/duenno-main-nav';
   static const String duennoHome = '/duenno-home';
-  static const String duennoRequests = '/duenno-requests'; // Publicador de Plato del Día (Ruta dinámica)
+  static const String duennoRequests = '/duenno-requests';
+  static const String duennoMenu = '/duenno-menu';
   static const String duennoProfile = '/duenno-profile';
 
   // Rutas - Comensal
@@ -77,6 +78,21 @@ class AppRoutes {
         builder: (_) => RequestsScreen(establecimientoId: establecimientoId),
       );
     }
+
+    if (settings.name == duennoMenu) {
+      final args = settings.arguments as Map<String, dynamic>?;
+      final int establecimientoId = args?['establecimientoId'] ?? 0;
+
+      return MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Menú Digital')),
+          body: Center(
+            child: Text('Gestión de menú para ID: $establecimientoId'),
+          ),
+        ),
+      );
+    }
+
     return null;
   }
 }
